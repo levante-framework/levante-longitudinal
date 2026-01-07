@@ -1,0 +1,143 @@
+---
+title: "Longitudinal growth comparison"
+format: html
+---
+
+
+```{r}
+library(tidyverse)
+#devtools::install_git(url="https://github.com/levante-framework/rlevante")
+library(rlevante) 
+library(viridis)
+```
+
+
+```{r}
+dataset_spec <- list(list(name = "pilot_uniandes_co_rural_processed:bxgv", 
+                          version = "current"),
+                     list(name = "pilot_uniandes_co_bogota_processed:d0c5", 
+                          version = "current"),
+                     list(name = "pilot_mpieva_de_main_processed:8wjx", 
+                          version = "current"), 
+                     list(name = "pilot_western_ca_main_processed:bgcj", 
+                          version = "current")) 
+
+scores <- rlevante::get_scores(dataset_spec) 
+```
+
+Data cleanup
+
+```{r}
+scores_cleaned <- scores |>
+  filter(age > 5, age < 13, 
+         score > -6, score < 6) |>
+  group_by(dataset, task_id) |>
+  mutate(std_score = (score - mean(score, na.rm = TRUE)) / sd(score, na.rm = TRUE))
+```
+
+Retest examination
+
+```{r}
+retest_scores <- scores_cleaned |> 
+  group_by(dataset, user_id, task_id) |>
+  arrange(user_id, task_id, age) |>
+  filter(n() > 1) |>
+  mutate(run_number = row_number(),
+         age_gap = c(0, diff(age))) 
+```
+
+Side quest: find repeat retest close together.
+
+```{r}
+retest_scores |>
+  group_by(user_id, task_id) |>
+  mutate(min_age_gap = min(age_gap[-1])) |>
+  filter(min_age_gap < .1) |>
+  pull(user_id) |>
+  unique()
+```
+There are actually only a few cases where kids were REALLY tested twice within a month, using two DIFFERENT adminstrations. 
+
+OK, now widen.
+
+```{r}
+retest_wide <- retest_scores |>
+  group_by(dataset, user_id, task_id) |>
+  mutate(has_retest = any(age_gap > .1), 
+         mean_age = mean(age), 
+         age_gap = max(age_gap)) |>
+  # filter(has_retest) |>
+  ungroup() |>  
+  pivot_wider(
+    id_cols = c(dataset, user_id, task_id, mean_age, age_gap),
+    names_from = run_number,
+    values_from = std_score,
+    names_prefix = "run_"
+  ) |>
+  select(dataset, user_id, task_id, age = mean_age, age_gap, run_1, run_2)
+
+independent_trt <- retest_wide |>
+  group_by(dataset, task_id) |>
+  summarise(test_retest_r = cor(run_1, run_2, use = "complete.obs"), 
+            n = n(), 
+            age_gap = mean(age_gap)*12) |>
+  mutate(model = "independent") |>
+  filter(n > 10)
+
+knitr::kable(independent_trt, digits = 2)
+```
+
+
+
+```{r}
+ggplot(independent_trt, 
+     aes(x = task_id, y = test_retest_r, col = dataset)) + 
+  geom_point() + 
+  ylim(0,1) + 
+  xlab("Task") + 
+  ylab("Test retest correlation") +
+  coord_flip() + 
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+ggplot(retest_wide, 
+       aes(x = run_1, y = run_2, col = dataset)) +
+  geom_point(alpha = .2) + 
+  geom_smooth(aes(group = 1), col = "blue", method = "lm") + 
+  geom_abline(lty = 3) + 
+  # viridis::scale_color_viridis() + 
+  theme_bw() + 
+  facet_wrap(~task_id) +
+  xlab("Score 1") + ylab("Score 2") + 
+  ggtitle("Test-retest reliability (DE)") + 
+  theme(legend.position = "bottom")
+```
+
+
+
+Spaghetti plot
+
+```{r}
+ggplot(filter(retest_scores, task_id != "pa", 
+              !str_detect(dataset, "western|rural")), 
+       aes(x = age, y = score, col = dataset)) + 
+  geom_line(aes(group = user_id), alpha = .5) + 
+  facet_wrap(~task_id, scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "bottom", legend.direction = "vertical")
+```
+
+Let's look at normalized growth. 
+
+```{r}
+ggplot(filter(retest_scores, task_id != "pa"), 
+       aes(x = age, y = std_score)) + 
+  geom_line(aes(group = user_id), alpha = .5) + 
+  geom_smooth(method = "lm") + 
+  geom_abline(slope = .5, intercept = -4.5, lty = 3) + 
+  facet_wrap(~task_id) + 
+  theme_bw()
+```
+

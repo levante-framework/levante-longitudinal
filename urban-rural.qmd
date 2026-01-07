@@ -20,8 +20,9 @@ dataset_spec <- list(list(name = "pilot_uniandes_co_rural_processed:bxgv:v1_0",
 # table = dataset.table("runs:8fp9")
 # table = dataset.table("runs_scored:6bsc")
 
-scores <- rlevante::get_scores(dataset_spec)
-
+scores <- rlevante::get_scores(dataset_spec) |>
+  mutate(dataset_name = ifelse(dataset == "pilot_uniandes_co_rural_processed:bxgv:v3_0", 
+                               "rural", "bogota"))
 
 ```
 
@@ -33,15 +34,28 @@ scores$task_id <- str_replace(scores$task_id, "-es", "")
 scores <- filter(scores, age > 5, age < 13)
 ```
 
+Tasks with standard scores.
 
 ```{r}
-ggplot(scores, aes(x = age, y = score, col = dataset)) + 
+ggplot(filter(scores, !(task_id %in% c("pa","sre",
+                                       "same-different-selection","theory-of-mind"))),
+       aes(x = age, y = score, col = dataset_name)) + 
   geom_point(alpha = .1) + 
   geom_smooth(method = "lm") + 
-  facet_wrap(~task_id) + 
+  facet_wrap(~task_id, scales = "free_y") + 
+  theme_classic() + 
+  ggthemes::scale_color_solarized(name = "Region") + 
+  theme(legend.position = "bottom") 
+```
+ROAR tasks without standard scores.
+
+```{r}
+ggplot(filter(scores, task_id %in% c("pa","sre")),
+       aes(x = age, y = score, col = dataset)) + 
+  geom_point(alpha = .1) + 
+  geom_smooth(method = "lm") + 
+  facet_wrap(~task_id, scales = "free_y") + 
   theme_classic() + 
   ggthemes::scale_color_solarized() + 
   theme(legend.position = "bottom") 
-  
 ```
-)
