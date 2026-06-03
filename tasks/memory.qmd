@@ -1,0 +1,144 @@
+---
+title: "Memory (Corsi) — item difficulty structure & the '2×2 vs 3×3' question"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 5.5
+execute:
+  warning: false
+  message: false
+---
+
+# Question
+
+The release notes flagged Memory scoring as not accounting for grid size
+(2×2 vs 3×3), and the task was marked DROP. But on corrected (v1.2) data the
+Colombia scores look fine, raising the hypothesis that the real culprit was
+the **column-order scoring bug** (now fixed) rather than the grid issue.
+
+The Corsi span task has a clean design: sequences of squares light up and the
+child reproduces them. Each item is defined by three features encoded in
+`item_uid` (`mg_{forward|backward}_{2grid|3grid}_len{N}`):
+
+- **direction** — forward (same order) vs backward (reversed)
+- **grid** — 2×2 vs 3×3 (more locations ⇒ harder)
+- **length** — span length 2–7
+
+We read the calibrated item difficulties as a function of these features —
+which reveals the actual difficulty structure of the task — and ask whether
+grid is properly separated and whether the structure replicates across sites.
+
+```{r setup}
+source(here::here("common.R"))
+ip <- load_item_parameters() |>
+  filter(task_id == "memory-game", subset == "all_items") |>
+  mutate(direction = str_extract(item_uid, "forward|backward"),
+         grid      = str_extract(item_uid, "2grid|3grid"),
+         length    = as.integer(str_extract(item_uid, "(?<=len)[0-9]+")))
+```
+
+# 1. Difficulty by length × grid × direction
+
+```{r diff-plot, fig.height=5}
+ip |>
+  ggplot(aes(x = length, y = difficulty, color = grid, linetype = direction)) +
+  geom_hline(yintercept = 0, lty = 3, color = "grey70") +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c(`2grid` = "#268bd2", `3grid` = "#cb4b16")) +
+  scale_x_continuous(breaks = 2:7) +
+  labs(x = "Sequence length", y = "Item difficulty (logits)",
+       title = "Memory item difficulty rises orderly with span length",
+       subtitle = "Grid is a separate item dimension (3×3 slightly harder); backward ≥ forward",
+       color = "Grid", linetype = "Direction")
+```
+
+```{r diff-slopes}
+ip |> group_by(direction, grid) |>
+  summarise(n_items = n(),
+            cor_length_difficulty = cor(length, difficulty),
+            logits_per_length = coef(lm(difficulty ~ length))[2],
+            .groups = "drop") |>
+  knitr::kable(digits = 3,
+               caption = "Difficulty is near-linear in length within each grid×direction")
+```
+
+The span structure is exactly as a working memory task should behave:
+difficulty increases ~1 logit per added item, near-perfectly ordered
+(r ≈ 0.90–1.00). Backward spans are harder than forward at matched length.
+
+# 2. Is grid size "accounted for"?
+
+The release-notes concern was that scoring ignored 2×2 vs 3×3. But the items
+**already separate by grid** — each (direction, length) has distinct 2×2 and
+3×3 items with their own calibrated difficulties.
+
+```{r grid-effect}
+ip |> select(direction, length, grid, difficulty) |>
+  pivot_wider(names_from = grid, values_from = difficulty) |>
+  mutate(`3×3 − 2×2` = `3grid` - `2grid`) |>
+  filter(!is.na(`3×3 − 2×2`)) |>
+  arrange(direction, length) |>
+  knitr::kable(digits = 2, caption = "Grid effect at matched direction × length")
+```
+
+The 3×3 items are modestly harder than 2×2 at matched length (~+0.2–0.5
+logits), as expected from the larger location set — and crucially this is
+**captured in the item parameters**, not lost. (The one large reversal is at
+length 7, where the 2×2 cell has very few responses.) So the "grid not
+accounted for" concern appears **already handled by the item design**; it is
+not what was breaking the scores.
+
+# 3. Does the structure replicate across sites?
+
+```{r site-acc, fig.height=5}
+tr <- load_levante_trials(task_ids = "memory-game") |>
+  filter(dataset %in% c("pilot_mpieva_de_main", "pilot_uniandes_co_bogota"),
+         item_uid %in% ip$item_uid) |>
+  mutate(correct = as.numeric(correct))
+
+acc <- tr |> group_by(dataset_label, item_uid) |>
+  summarise(acc = mean(correct, na.rm = TRUE), n = n(), .groups = "drop") |>
+  left_join(ip |> select(item_uid, direction, grid, length), by = "item_uid") |>
+  pivot_wider(names_from = dataset_label, values_from = c(acc, n))
+
+acc |>
+  ggplot(aes(x = `acc_Colombia — Bogotá`, y = `acc_Germany — Leipzig`,
+             color = grid, size = length)) +
+  geom_abline(slope = 1, intercept = 0, lty = 3, color = "grey50") +
+  geom_point(alpha = 0.8) +
+  scale_color_manual(values = c(`2grid` = "#268bd2", `3grid` = "#cb4b16")) +
+  coord_equal() +
+  labs(x = "Item accuracy — Bogotá", y = "Item accuracy — Leipzig",
+       title = "Item accuracy is rank-consistent across sites",
+       subtitle = glue::glue("r = {round(cor(acc$`acc_Colombia — Bogotá`, acc$`acc_Germany — Leipzig`, use='complete.obs'),2)}; Leipzig higher overall (above the diagonal)"),
+       color = "Grid", size = "Length")
+```
+
+Item accuracies correlate **r ≈ 0.90** across the two sites — the difficulty
+*ordering* is the same everywhere. Leipzig sits above the diagonal (higher
+accuracy), but that is a level difference (sample/age), not disorder or noise
+in the measure.
+
+# Verdict
+
+- **Memory is well-behaved on corrected data.** Difficulty is cleanly ordered
+  by span length, backward > forward, and the structure replicates across
+  sites (r ≈ 0.90).
+- **The "2×2 vs 3×3" concern is already handled** — grid is a separate item
+  dimension with its own calibrated difficulties, so scoring is not blind to
+  it. The 3×3 penalty (~+0.3 logits) is captured.
+- This supports the hypothesis that **the earlier Memory problems were the
+  column-order scoring bug, not the grid issue.** With v1.2, the task looks
+  usable.
+- **Recommendation:** revisit the DROP verdict — Memory appears suitable for
+  growth/SEM on corrected data. (One housekeeping edge case: a few `len8`
+  trials exist in the data but were not calibrated and show ~0% accuracy;
+  exclude them.)
+
+```{r save}
+write_rds(ip, here::here("data", "memory_item_difficulties.rds"))
+```

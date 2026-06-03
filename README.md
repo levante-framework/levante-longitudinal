@@ -37,8 +37,12 @@ are git-ignored.
 
 ## Remaining known data issues (v1.2)
 
-1. **Memory (`memory-game`) — DROP.** Release-notes scoring issue (2×2 vs 3×3
-   grid complexity unmodeled); reinforced by super-low Bogotá scores.
+1. **Memory (`memory-game`) — DROP flag likely obsolete.** `tasks/memory.qmd`
+   shows grid size *is* already a separate item dimension (2×2 vs 3×3 items are
+   calibrated apart), difficulty is cleanly ordered by span length, and the
+   structure replicates across sites (r ≈ 0.90). The earlier problem was the
+   scoring bug, not the grid. Recommend revisiting the DROP (pending any
+   official scoring update).
 2. **Same & Different (`same-different-selection`) — CAVEAT.** Scoring update
    pending (release notes); also zero T2 at Bogotá.
 3. **ROAR-Word non-engagement — handled in cleaning.** Rushers (median RT <
@@ -64,8 +68,8 @@ children with ≥ 2 administrations (longitudinal signal).
 | Stories / ToM | theory-of-mind | 1931 | 198 | **deep-dived** (`tasks/stories_tom*`, `tom_*`) |
 | Vocabulary | vocab | 1481 | 239 | **deep-dived** (`tasks/vocab.qmd`) |
 | ROAR-Word | swr | 1610 | 195 | **deep-dived** (`tasks/roar_word.qmd`) |
-| Memory | memory-game | 1717 | 284 | not yet — **priority** (scoring issue to investigate) |
-| Hearts & Flowers | hearts-and-flowers | 1685 | 280 | not yet |
+| Memory | memory-game | 1717 | 284 | **deep-dived** (`tasks/memory.qmd`) — grid OK, DROP likely obsolete |
+| Hearts & Flowers | hearts-and-flowers | 1685 | 280 | **deep-dived** (`tasks/hearts_and_flowers.qmd`) — 2PL > Rasch, start trials low-info |
 | Pattern Matching | matrix-reasoning | 1536 | 263 | not yet — T2>T1 training question |
 | Shape Rotation | mental-rotation | 1482 | 247 | not yet |
 | Sentence Understanding | trog | 1465 | 229 | not yet — T2>T1 training question |
@@ -73,7 +77,6 @@ children with ≥ 2 administrations (longitudinal signal).
 | Same & Different | same-different-selection | 1066 | 201 | not yet — scoring update pending |
 | ROAR-Phoneme | pa | 1554 | 69 | not yet |
 
-**Suggested next deep dives:** Memory (resolve the 2×2/3×3 scoring issue at
-trial level), then Pattern Matching + Sentence Understanding (test the
-training-vs-development T2 > T1 question on corrected data), then the EF block
-(Hearts & Flowers, Same & Different).
+**Suggested next deep dives:** Pattern Matching + Sentence Understanding (test
+the training-vs-development T2 > T1 question on corrected data), then Same &
+Different (scoring update pending) and Shape Rotation.

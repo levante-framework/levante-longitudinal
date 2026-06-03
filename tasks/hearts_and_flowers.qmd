@@ -1,0 +1,149 @@
+---
+title: "Hearts & Flowers — item structure (start/stay/switch) and 2PL vs Rasch"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 5.5
+execute:
+  warning: false
+  message: false
+---
+
+# Question
+
+Hearts & Flowers (inhibitory control / cognitive flexibility) has been through
+many scoring iterations. The most recent view: the nuanced item structure —
+distinguishing **start / stay / switch** trials within each block, and using a
+**2PL** rather than a Rasch model — fits better. Here we check that on
+corrected (v1.2) data, and look at whether the structure replicates across
+sites (DE looked possibly noisier than CO).
+
+Item structure (`item_uid = {block}_{stim}_{type}`):
+
+- **block** — `hearts` (congruent only), `flowers` (incongruent only),
+  `heartsflowers` (mixed)
+- **type** — `start` (first trial of a block), `stay` (rule repeats),
+  `switch` (rule changes; mixed block only)
+
+```{r setup}
+source(here::here("common.R"))
+library(mirt)
+ip <- load_item_parameters() |>
+  filter(task_id == "hearts-and-flowers", subset == "all_items") |>
+  mutate(block = str_extract(item_uid, "^(heartsflowers|hearts|flowers)"),
+         type  = factor(str_extract(item_uid, "start|stay|switch"),
+                        levels = c("start","stay","switch")),
+         stim  = str_extract(item_uid, "heart|flower"))
+```
+
+# 1. Item difficulty and discrimination
+
+H&F is scored with a **2PL** model, so each item has both a difficulty and a
+discrimination. The discrimination is where the action is.
+
+```{r params-table}
+ip |> select(item_uid, block, type, difficulty, discrimination, n_responses) |>
+  arrange(block, type) |>
+  knitr::kable(digits = 2, caption = "H&F 2PL item parameters")
+```
+
+```{r param-plot, fig.height=5}
+ip |>
+  ggplot(aes(x = difficulty, y = discrimination, color = type, shape = block)) +
+  geom_point(size = 3, alpha = 0.85) +
+  ggrepel::geom_text_repel(aes(label = str_remove(item_uid, "_(heart|flower)")),
+                           size = 2.6, show.legend = FALSE, max.overlaps = 20) +
+  scale_color_brewer(palette = "Set1") +
+  labs(x = "Difficulty (logits)", y = "Discrimination (2PL a)",
+       title = "H&F items: difficulty and discrimination by trial type",
+       subtitle = "Switch items hardest; start trials discriminate least")
+```
+
+```{r by-type}
+ip |> group_by(type) |>
+  summarise(n = n(), mean_difficulty = mean(difficulty),
+            mean_discrimination = mean(discrimination), .groups = "drop") |>
+  knitr::kable(digits = 2, caption = "By trial type")
+```
+
+Two clear patterns:
+
+- **Difficulty:** pure blocks (hearts/flowers) are easy; the **mixed block** is
+  harder, and **switch** trials are the hardest of all (the switch cost). This
+  is the expected executive-function signature.
+- **Discrimination:** **start trials discriminate least** (a ≈ 1.75) vs. stay
+  (≈ 2.28) and switch (≈ 2.32). Start trials are the first of a block — warm-up,
+  noisier — so they carry less ability information. Forcing them to share a
+  single discrimination (Rasch) misfits; giving them their own item label under
+  a 2PL captures it.
+
+# 2. 2PL vs Rasch
+
+```{r irt-fit, cache=TRUE}
+tr <- load_levante_trials(task_ids = "hearts-and-flowers") |>
+  filter(dataset %in% c("pilot_mpieva_de_main", "pilot_uniandes_co_bogota")) |>
+  mutate(correct = as.numeric(correct))
+wide <- tr |> distinct(run_id, item_uid, .keep_all = TRUE) |>
+  select(run_id, item_uid, correct) |>
+  pivot_wider(names_from = item_uid, values_from = correct) |>
+  select(-run_id) |> as.matrix()
+wide <- wide[, colMeans(!is.na(wide)) > 0.2]
+wide <- wide[rowSums(!is.na(wide)) > 0, ]
+
+m_rasch <- mirt(wide, 1, itemtype = "Rasch", verbose = FALSE)
+m_2pl   <- mirt(wide, 1, itemtype = "2PL",   verbose = FALSE)
+anova(m_rasch, m_2pl) |> as.data.frame() |>
+  select(AIC, BIC, logLik, X2, df, p) |>
+  knitr::kable(digits = 2, caption = "Rasch vs 2PL (pooled DE+CO)")
+```
+
+The 2PL is preferred by the likelihood-ratio test (χ² ≈ 50, df = 9, p < .001)
+and AIC. (BIC is close, since the extra discrimination parameters are penalised
+heavily, but the LR test and the clear discrimination heterogeneity above favor
+2PL.) This confirms the current scoring choice: **start trials genuinely
+discriminate differently, and a 2PL is the right model.**
+
+# 3. Does the structure replicate across sites?
+
+```{r site-acc, fig.height=5}
+acc <- tr |> group_by(dataset_label, item_uid) |>
+  summarise(acc = mean(correct, na.rm = TRUE), .groups = "drop") |>
+  left_join(ip |> select(item_uid, type, block), by = "item_uid") |>
+  pivot_wider(names_from = dataset_label, values_from = acc)
+
+acc |>
+  ggplot(aes(x = `Colombia — Bogotá`, y = `Germany — Leipzig`, color = type)) +
+  geom_abline(slope = 1, intercept = 0, lty = 3, color = "grey50") +
+  geom_point(size = 3, alpha = 0.85) +
+  scale_color_brewer(palette = "Set1") +
+  coord_equal() +
+  labs(x = "Item accuracy — Bogotá", y = "Item accuracy — Leipzig",
+       title = "H&F item accuracy across sites",
+       subtitle = glue::glue("r = {round(cor(acc$`Colombia — Bogotá`, acc$`Germany — Leipzig`, use='complete.obs'),2)}; consistent ordering, Bogotá slightly higher"))
+```
+
+Item accuracies correlate **r ≈ 0.94** across sites — the difficulty structure
+replicates. Here Bogotá is slightly *higher*-accuracy than Leipzig (the
+opposite direction from Memory, where Leipzig was higher), so there is no
+general "Leipzig is noisier" effect: each task's site-level offset reflects
+sample/age, not measurement noise.
+
+# Verdict
+
+- The **start / stay / switch** structure is psychometrically real: switch
+  trials are hardest (switch cost), and **start trials discriminate least**
+  (warm-up noise).
+- **2PL fits better than Rasch** (LR + AIC), driven by that discrimination
+  heterogeneity — the current scoring is right to model it.
+- Structure replicates across sites (r ≈ 0.94); site differences are level, not
+  noise.
+- H&F looks **usable on corrected data**; the main subtlety to carry forward is
+  that start trials are low-information (one could down-weight or drop them for
+  a tighter ability estimate, but the 2PL already handles this).
+
+```{r save}
+write_rds(ip, here::here("data", "hf_item_parameters.rds"))
+```
