@@ -1,0 +1,374 @@
+---
+title: "Stories (Theory of Mind) — structure, rescoring, and item analysis"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 10
+    fig-height: 6
+execute:
+  warning: false
+  message: false
+---
+
+# Purpose
+
+Deep-dive on the Stories / Theory-of-Mind (ToM) task: rescore with the
+column-order fix, test our assumptions about its structure, and decide which
+items are pulling their weight. Stories have a dependency structure (multiple
+questions per story), and there are original + retest forms, so the item set
+needs careful handling.
+
+Decisions encoded here (per discussion):
+
+1. **Construct schemes** (old 6-group vs. new 5-construct): test whether either
+   explains item difficulty or age-related variation.
+2. **Reality-check controls**: test whether they correlate with targets, gate
+   target diagnosticity, or neither — and whether including them helps
+   reliability / age-validity.
+3. **Hostile-attribution items** (`ha_*`): a separate construct — excluded
+   throughout (and already absent from the scoring models).
+4. **Retest items**: scored as distinct; then separately check whether
+   structurally-parallel items have correlated difficulties.
+
+```{r setup}
+source(here::here("common.R"))
+library(rlevante); library(mirt); library(psych); library(ggrepel)
+
+meta <- read_rds(here::here("data/tom_meta/tom_item_metadata.rds")) |>
+  filter(!is_hostile_attribution)
+
+run_age <- read_rds(here::here("data/scores_all_sites.rds")) |>
+  filter(task_id == "theory-of-mind") |> distinct(run_id, age)
+
+tr <- load_levante_trials(task_ids = "theory-of-mind") |>
+  filter(!str_starts(item_uid, "ha_")) |>
+  left_join(run_age, by = "run_id") |>
+  left_join(meta |> select(item_uid, tom_scenario, old_group, new_construct,
+                           question_type, is_control),
+            by = "item_uid") |>
+  mutate(correct = as.numeric(correct))
+```
+
+# Item inventory
+
+```{r inventory}
+meta |> count(question_type, name = "n_items") |> knitr::kable()
+meta |> filter(in_sheet) |> count(new_construct, name = "n_items") |> knitr::kable()
+```
+
+The task contains `r sum(meta$is_control)` reality-check (control) items and
+`r sum(!meta$is_control)` target items, across 18 stories in 3 corpus forms
+(v2 original; retest-A; retest-B).
+
+# 1. Rescoring (bug fix) and longitudinal consistency
+
+The IRT scoring path had a column-order bug (see
+`reports/rlevante_handoff.md`). We rescore ToM correctly and validate against
+each model's calibration-time scores.
+
+```{r rescore, cache=TRUE}
+mods <- list("pilot_mpieva_de_main"     = read_rds(here::here("data/tom_model_de-DE_v1_14.rds")),
+             "pilot_uniandes_co_bogota" = read_rds(here::here("data/tom_model_es-CO_v1_14.rds")),
+             "pilot_western_ca_main"    = read_rds(here::here("data/tom_model_en-US_v1_14.rds")))
+
+corrected <- imap_dfr(mods, function(mr, ds) {
+  trd <- load_levante_trials(task_ids = "theory-of-mind") |> filter(dataset == ds)
+  gold <- as.data.frame(mr@scores) |> select(run_id, gold = ability)
+  fixed <- score_with_method(trd, "tom", ds, method = "EAP", mod_rec = mr) |>
+    select(run_id, corrected = score, se = score_se)
+  buggy <- rlevante:::score_irt(recode_trials(trd),
+            as.list(rlevante:::get_model_spec("tom", ds, fetch_scoring_table())), mr) |>
+    transmute(run_id, buggy = as.numeric(score))
+  fixed |> left_join(buggy, by="run_id") |> left_join(gold, by="run_id") |>
+    mutate(dataset = ds)
+})
+
+corrected |> group_by(dataset) |>
+  summarise(n = sum(!is.na(gold)),
+            cor_corrected_gold = cor(corrected, gold, use="complete.obs"),
+            cor_buggy_gold     = cor(buggy, gold, use="complete.obs"),
+            .groups = "drop") |>
+  knitr::kable(digits = 3, caption = "Bug validation vs calibration gold")
+```
+
+```{r longitudinal}
+sc <- read_rds(here::here("data/scores_all_sites.rds"))
+pairs <- sc |> filter(task_id == "theory-of-mind", dataset %in% names(mods)) |>
+  select(run_id, user_id, age, dataset, dataset_label, published = score) |>
+  left_join(corrected |> select(run_id, corrected), by = "run_id") |>
+  group_by(dataset, user_id) |> arrange(age) |> mutate(wave = row_number()) |>
+  ungroup() |> filter(wave <= 2) |>
+  group_by(dataset, dataset_label, user_id) |> filter(n_distinct(wave) == 2) |>
+  summarise(pub_t1=published[wave==1], pub_t2=published[wave==2],
+            cor_t1=corrected[wave==1], cor_t2=corrected[wave==2], .groups="drop")
+
+pairs |> group_by(dataset_label) |>
+  filter(n() >= 10) |>
+  summarise(n = n(),
+            retest_r_published = cor(pub_t1, pub_t2, use="complete.obs"),
+            retest_r_corrected = cor(cor_t1, cor_t2, use="complete.obs"),
+            mean_change_published = mean(pub_t2 - pub_t1, na.rm=TRUE),
+            mean_change_corrected = mean(cor_t2 - cor_t1, na.rm=TRUE),
+            .groups = "drop") |>
+  knitr::kable(digits = 3,
+               caption = "Longitudinal T1->T2 (only DE has ToM retest data)")
+```
+
+The bug affected DE ToM (buggy r ≈ 0.87 vs. gold) but not CO (r ≈ 1.0).
+Correcting it raises DE test–retest from ~0.45 to ~0.53 and removes a spurious
++0.44 logit "gain."
+
+# 2. Do the construct schemes explain anything?
+
+```{r construct-difficulty}
+ip <- load_item_parameters() |> filter(task_id == "theory-of-mind") |>
+  select(item_uid, subset, difficulty) |>
+  inner_join(meta, by = "item_uid") |>
+  group_by(subset) |> mutate(diff_z = as.numeric(scale(difficulty))) |> ungroup()
+
+r2 <- function(df, y, f) summary(lm(reformulate(f, y), data = df))$r.squared
+tibble(
+  scheme = c("old_group (6)", "new_construct (5)", "question_type"),
+  R2_difficulty = c(r2(ip, "diff_z", "old_group"),
+                    r2(ip, "diff_z", "new_construct"),
+                    r2(ip, "diff_z", "question_type"))
+) |> knitr::kable(digits = 3, caption = "Variance in (within-language z) item difficulty explained")
+```
+
+```{r construct-age}
+item_age <- tr |> filter(!is.na(age)) |>
+  group_by(item_uid) |>
+  filter(n() >= 50, n_distinct(correct) == 2) |>
+  summarise(age_slope = coef(glm(correct ~ scale(age), family = binomial))[2],
+            base_acc = mean(correct), .groups = "drop") |>
+  inner_join(meta, by = "item_uid")
+
+tibble(
+  scheme = c("old_group (6)", "new_construct (5)", "question_type"),
+  R2_age_slope = c(r2(item_age, "age_slope", "old_group"),
+                   r2(item_age, "age_slope", "new_construct"),
+                   r2(item_age, "age_slope", "question_type"))
+) |> knitr::kable(digits = 3, caption = "Variance in item age-slope explained")
+```
+
+```{r qtype-plot, fig.height=4}
+item_age |>
+  ggplot(aes(x = reorder(question_type, age_slope), y = age_slope, fill = question_type)) +
+  geom_hline(yintercept = 0, lty = 3) +
+  geom_boxplot(alpha = 0.7, outlier.size = 0.6) +
+  scale_fill_brewer(palette = "Set2", guide = "none") +
+  coord_flip() +
+  labs(x = NULL, y = "Item age-slope (logistic, per SD age)",
+       title = "Age sensitivity by question type",
+       subtitle = "false_belief targets carry the age signal; controls are flat/near-ceiling")
+```
+
+**Takeaway:** neither story-construct scheme explains much (R² ≈ 0.07–0.11 for
+difficulty, ~0.06 n.s. for age). The new construct edges out the old for
+difficulty. What dominates is **question type**: `false_belief` targets are the
+age-diagnostic items; `reference` items are very hard; controls/emotion are easy.
+
+# 3. Reality-check controls
+
+```{r controls-correlate}
+person <- tr |> filter(!is.na(age)) |>
+  group_by(run_id, age, kind = if_else(is_control, "control", "target")) |>
+  summarise(acc = mean(correct), .groups = "drop") |>
+  pivot_wider(names_from = kind, values_from = acc)
+
+tibble(
+  comparison = c("control_acc ~ target_acc", "control_acc ~ age", "target_acc ~ age"),
+  r = c(cor(person$control, person$target, use="complete.obs"),
+        cor(person$control, person$age, use="complete.obs"),
+        cor(person$target, person$age, use="complete.obs"))
+) |> knitr::kable(digits = 3, caption = "(A) Person-level correlations")
+```
+
+```{r controls-gate}
+story_lvl <- tr |> filter(!is.na(age)) |>
+  group_by(run_id, age, tom_scenario) |>
+  summarise(ctrl_pass = if (any(is_control)) mean(correct[is_control]) >= 0.999 else NA,
+            target_acc = mean(correct[!is_control]),
+            n_ctrl = sum(is_control), n_t = sum(!is_control), .groups = "drop") |>
+  filter(n_ctrl > 0, n_t > 0, !is.na(ctrl_pass))
+
+story_lvl |> group_by(ctrl_pass) |>
+  summarise(n_story_instances = n(),
+            mean_target_acc = mean(target_acc),
+            target_age_beta = coef(lm(target_acc ~ scale(age)))[2],
+            .groups = "drop") |>
+  knitr::kable(digits = 3,
+               caption = "(B) Gating: does passing a story's control sharpen target age-diagnosticity?")
+```
+
+```{r controls-reliability, cache=TRUE}
+novar <- function(x) length(unique(x[!is.na(x)])) < 2
+clean_mat <- function(mat) {
+  mat <- mat[, colMeans(!is.na(mat)) > 0.15, drop=FALSE]
+  mat <- mat[, !apply(mat, 2, novar), drop=FALSE]
+  mat[rowSums(!is.na(mat)) > 0, , drop=FALSE]
+}
+marg_rel <- function(mat) {
+  mat <- clean_mat(mat)
+  m <- mirt(mat, 1, itemtype = "Rasch", verbose = FALSE,
+            technical = list(NCYCLES = 3000))
+  as.numeric(marginal_rxx(m))
+}
+wide_de <- tr |> filter(dataset == "pilot_mpieva_de_main") |>
+  distinct(run_id, item_uid, .keep_all = TRUE) |>
+  select(run_id, item_uid, correct) |>
+  pivot_wider(names_from = item_uid, values_from = correct) |>
+  select(-run_id) |> as.matrix()
+ctrl_items <- meta |> filter(is_control) |> pull(item_uid)
+rel_all <- marg_rel(wide_de)
+rel_tgt <- marg_rel(wide_de[, setdiff(colnames(wide_de), ctrl_items)])
+
+tibble(score = c("all items", "targets only"),
+       n_items = c(ncol(clean_mat(wide_de)),
+                   ncol(clean_mat(wide_de[, setdiff(colnames(wide_de), ctrl_items)]))),
+       marginal_reliability = c(rel_all, rel_tgt),
+       age_validity = c(cor(person$age, rowMeans(cbind(person$control, person$target), na.rm=TRUE), use="complete.obs"),
+                        cor(person$age, person$target, use="complete.obs"))) |>
+  knitr::kable(digits = 3, caption = "(C) Reliability & age-validity, with vs without controls (DE)")
+```
+
+**Takeaway:** controls correlate moderately with targets (r ≈ 0.46) and weakly
+with age (r ≈ 0.27); they do **not** gate target age-diagnosticity (target~age
+slope is similar whether the control is passed or failed). Dropping controls
+slightly *lowers* marginal reliability (0.92 → 0.89) without improving age
+validity. So controls are mildly redundant but harmless — **recommendation:
+keep them in.**
+
+# 4. DIF across sites
+
+Logistic-regression DIF (Zumbo) on items administered in ≥2 sites with n ≥ 50,
+matching on within-site standardized ability. Uniform DIF = site main effect at
+matched ability. Cross-site here is also cross-language (de-DE / es-CO / en-US),
+so some DIF is expected; we flag the largest.
+
+```{r dif}
+ability <- corrected |> group_by(dataset) |>
+  mutate(abil_z = as.numeric(scale(corrected))) |> ungroup() |>
+  select(run_id, abil_z)
+
+dif_dat <- tr |> filter(dataset %in% c("pilot_mpieva_de_main","pilot_uniandes_co_bogota")) |>
+  inner_join(ability, by = "run_id") |> filter(!is.na(abil_z))
+
+shared <- dif_dat |> group_by(item_uid, dataset) |> summarise(n=n(), .groups="drop") |>
+  filter(n >= 50) |> count(item_uid) |> filter(n == 2) |> pull(item_uid)
+
+dif_res <- map_dfr(shared, function(it) {
+  d <- dif_dat |> filter(item_uid == it)
+  m0 <- glm(correct ~ abil_z, data = d, family = binomial)
+  m1 <- glm(correct ~ abil_z + dataset, data = d, family = binomial)
+  tibble(item_uid = it,
+         uniform_dif = coef(m1)["datasetpilot_uniandes_co_bogota"],
+         p = anova(m0, m1, test = "Chisq")$`Pr(>Chi)`[2])
+}) |> left_join(meta |> select(item_uid, question_type, old_group), by="item_uid") |>
+  mutate(p_adj = p.adjust(p, "BH"))
+
+cat("Shared items tested:", length(shared),
+    "| flagged DIF (BH<.05):", sum(dif_res$p_adj < .05, na.rm=TRUE), "\n")
+dif_res |> arrange(p_adj) |> head(12) |>
+  knitr::kable(digits = 3, caption = "Largest DE-vs-CO DIF (+ = easier for CO at matched ability)")
+```
+
+```{r dif-by-type, fig.height=3.5}
+dif_res |> ggplot(aes(x = abs(uniform_dif), y = reorder(question_type, abs(uniform_dif)))) +
+  geom_boxplot(aes(fill = question_type), alpha=0.6, outlier.size=0.6) +
+  scale_fill_brewer(palette="Set2", guide="none") +
+  labs(x = "|uniform DIF| (logit)", y = NULL,
+       title = "Cross-site DIF magnitude by question type")
+```
+
+**Important caveat.** Essentially *every* shared item flags as DIF, at very
+large magnitude (up to ~6 logits). That is not 30 individually-biased items —
+it is a symptom that the DE and CO models are **calibrated separately
+(`by_language`)**, so matching on within-site ability rank is confounded by
+scale incomparability. This logistic-DIF test therefore mostly reflects
+**global cross-language non-invariance** (consistent with ToM reaching only
+*configural* invariance in the core-tasks paper), not clean item-level bias. A
+rigorous DIF analysis needs a single **multigroup calibration with anchor
+items** — properly a scoring-pipeline task. What is interpretable here is the
+*relative* pattern: **control questions show the largest cross-site
+variability** (mean |DIF| ≈ 3.0, all flagged) and `reference` the least — i.e.
+comprehension/translation differences hit the controls hardest.
+
+# 5. Dimensionality
+
+```{r efa, cache=TRUE}
+good <- clean_mat(wide_de)
+good <- good[, colMeans(!is.na(good)) > 0.5]
+tc <- suppressWarnings(tetrachoric(good)$rho)
+ev <- eigen(tc)$values
+tibble(factor = 1:6, eigenvalue = ev[1:6]) |>
+  knitr::kable(digits = 2, caption = "Top eigenvalues (tetrachoric corr, DE well-covered items)")
+```
+
+```{r scree, fig.height=3.5}
+tibble(k = 1:length(ev), ev = ev) |>
+  ggplot(aes(k, ev)) + geom_line() + geom_point() +
+  geom_hline(yintercept = 1, lty = 3) +
+  labs(x = "Component", y = "Eigenvalue",
+       title = glue("ToM dimensionality (ev1/ev2 = {round(ev[1]/ev[2],2)})"),
+       subtitle = "Ratio < ~3 → not cleanly unidimensional")
+```
+
+The covariance is **not cleanly unidimensional** (ev1/ev2 ≈ 1.9, several
+eigenvalues > 1). Combined with §2, this suggests ToM ability as scored mixes
+several weakly-related sub-abilities rather than one clean construct.
+
+# 6. Retest parallel-item difficulty correlation
+
+Parallel family = items sharing `old_group` × question-type base across the
+three corpus forms (designed to be structurally equivalent). If the forms are
+truly parallel, within-family difficulty spread should be small relative to the
+overall spread.
+
+```{r retest}
+fam <- ip |> filter(subset == "de-DE", !is_control) |>
+  mutate(entry_base = str_remove(entry, "_[0-9]+$")) |>
+  group_by(old_group, entry_base) |>
+  summarise(n_parallel = n(), within_sd = sd(difficulty),
+            mean_diff = mean(difficulty), .groups = "drop") |>
+  filter(n_parallel >= 2)
+
+overall_sd <- sd(ip$difficulty[ip$subset == "de-DE"], na.rm = TRUE)
+fam |> arrange(desc(within_sd)) |>
+  knitr::kable(digits = 2,
+               caption = glue("Within-family difficulty SD (overall item SD = {round(overall_sd,2)})"))
+```
+
+Median within-family difficulty SD ≈ 0.9 vs. overall ≈ 2.3 — parallels are
+~2.5× more similar than random items, so the parallel structure is real, but
+some families (e.g. moral_reasoning emotion, deception false-belief) diverge
+substantially and are not safely interchangeable.
+
+# Synthesis & recommendations
+
+```{r save}
+write_rds(corrected, here::here("data/tom_corrected_scores.rds"))
+write_rds(dif_res, here::here("data/tom_dif_results.rds"))
+```
+
+- **Scoring:** rescore with the column-order fix (DE was affected, CO not);
+  this improves DE test–retest (~0.45 → 0.53).
+- **Construct schemes:** neither old nor new story-construct labels explain much
+  difficulty or age variance; **question type** is the real structuring
+  variable. If we want a categorization that "does work," it's target vs.
+  control vs. reference, not the story constructs.
+- **Controls:** keep them — mildly redundant but they add reliable variance and
+  don't hurt age-validity.
+- **Dimensionality:** ToM is not cleanly unidimensional; a single θ is a rough
+  summary. Worth exploring a 2–3 factor solution or scoring `false_belief`
+  targets as the core developmental scale.
+- **Retest forms:** structurally-parallel items are broadly similar in
+  difficulty but several families diverge — treat as distinct for scoring (as
+  done) and don't assume strict form equivalence.
+- **DIF:** the logistic-DIF test flags ~all shared items at large magnitude —
+  this signals *global* cross-language non-invariance (separate calibrations),
+  not 30 individually-biased items. Properly diagnosing item-level DIF needs a
+  multigroup anchored calibration. The interpretable signal: controls vary most
+  across sites, `reference` least.

@@ -1,0 +1,187 @@
+---
+title: "Stories (ToM) — dimensionality & sub-construct structure"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 5
+execute:
+  warning: false
+  message: false
+---
+
+# Question
+
+`stories_tom.html` found ToM is not cleanly unidimensional (ev1/ev2 ≈ 1.9).
+Here we ask: **is there an interpretable sub-construct structure?** Do items
+group by (a) the story-construct schemes, (b) question type, or (c) story
+(testlet/dependency structure) — and would any sub-scale (e.g. false-belief
+targets) be a cleaner developmental measure than the full composite?
+
+Analysis is on the DE (Leipzig) sample — the largest and the only one with ToM
+retest data. Items restricted to those with >40% coverage and non-extreme
+difficulty (for tetrachoric stability). Hostile-attribution items excluded.
+
+```{r setup}
+source(here::here("common.R"))
+library(psych); library(mirt)
+meta <- read_rds(here::here("data/tom_meta/tom_item_metadata.rds")) |>
+  filter(!is_hostile_attribution)
+run_age <- read_rds(here::here("data/scores_all_sites.rds")) |>
+  filter(task_id == "theory-of-mind") |> distinct(run_id, age)
+tr <- load_levante_trials(task_ids = "theory-of-mind") |>
+  filter(!str_starts(item_uid, "ha_")) |>
+  left_join(run_age, by = "run_id") |>
+  left_join(meta |> select(item_uid, tom_scenario, old_group, new_construct,
+                           question_type, is_control), by = "item_uid") |>
+  mutate(correct = as.numeric(correct))
+
+de_mat <- tr |> filter(dataset == "pilot_mpieva_de_main") |>
+  distinct(run_id, item_uid, .keep_all = TRUE) |>
+  select(run_id, item_uid, correct) |>
+  pivot_wider(names_from = item_uid, values_from = correct) |>
+  select(-run_id) |> as.matrix()
+de_mat <- de_mat[, colMeans(!is.na(de_mat)) > 0.4]
+p <- colMeans(de_mat, na.rm = TRUE); de_mat <- de_mat[, p > 0.08 & p < 0.97]
+tc <- suppressWarnings(tetrachoric(de_mat, smooth = TRUE)$rho)
+```
+
+# 1. How many dimensions?
+
+```{r eigen}
+ev <- eigen(tc)$values
+pa <- suppressWarnings(fa.parallel(tc, n.obs = nrow(de_mat), fa = "fa", plot = FALSE))
+tibble(component = 1:8, eigenvalue = round(ev[1:8], 2)) |>
+  knitr::kable(caption = glue("DE, {ncol(de_mat)} items. ev1/ev2 = {round(ev[1]/ev[2],2)}; parallel analysis suggests {pa$nfact} factors"))
+```
+
+```{r scree, fig.height=3.5}
+tibble(k = seq_along(ev), ev = ev) |>
+  ggplot(aes(k, ev)) + geom_line() + geom_point() +
+  geom_hline(yintercept = 1, lty = 3) +
+  labs(x = "Component", y = "Eigenvalue", title = "Scree (tetrachoric)")
+```
+
+A shallow scree with no clear elbow and a parallel-analysis suggestion of many
+factors is the signature of **diffuse, weakly-correlated items**, not a clean
+low-dimensional structure. (The large "n factors" from parallel analysis is
+over-extraction on a noisy sparse tetrachoric matrix — it should be read as
+"no dominant structure," not "10 real factors.")
+
+# 2. What organizes the (weak) covariance? Story vs question type vs construct
+
+For every item pair, compare tetrachoric correlations within vs. between each
+grouping. If a grouping is the real structure, within-group r should clearly
+exceed between-group r.
+
+```{r structure}
+itmap <- meta |> filter(item_uid %in% colnames(tc)) |>
+  select(item_uid, tom_scenario, question_type, old_group, new_construct)
+pr <- which(upper.tri(tc), arr.ind = TRUE)
+pd <- tibble(i = colnames(tc)[pr[,1]], j = colnames(tc)[pr[,2]], r = tc[upper.tri(tc)]) |>
+  left_join(itmap, by = c("i"="item_uid")) |>
+  rename(story_i=tom_scenario, qt_i=question_type, og_i=old_group, nc_i=new_construct) |>
+  left_join(itmap, by = c("j"="item_uid")) |>
+  rename(story_j=tom_scenario, qt_j=question_type, og_j=old_group, nc_j=new_construct)
+
+bind_rows(
+  pd |> transmute(grouping = "same story",         same = story_i == story_j, r),
+  pd |> transmute(grouping = "same question type", same = qt_i == qt_j,       r),
+  pd |> transmute(grouping = "same old group",     same = og_i == og_j,       r),
+  pd |> transmute(grouping = "same new construct", same = nc_i == nc_j,       r)
+) |>
+  group_by(grouping, same) |>
+  summarise(n_pairs = n(), mean_r = mean(r, na.rm = TRUE), .groups = "drop") |>
+  pivot_wider(names_from = same, values_from = c(n_pairs, mean_r)) |>
+  mutate(within_minus_between = mean_r_TRUE - mean_r_FALSE) |>
+  select(grouping, mean_r_within = mean_r_TRUE, mean_r_between = mean_r_FALSE,
+         within_minus_between) |>
+  arrange(desc(within_minus_between)) |>
+  knitr::kable(digits = 3,
+               caption = "Within- vs between-group item correlation")
+```
+
+**Question type is the strongest organizer** (within 0.20 vs between 0.11),
+ahead of story testlet (0.17 vs 0.13) and well ahead of either construct scheme
+(near zero difference). But note the absolute level: even within question type,
+mean r ≈ 0.2 — the items are weakly correlated across the board.
+
+```{r efa-loadings}
+f2 <- suppressWarnings(fa(tc, nfactors = 2, n.obs = nrow(de_mat),
+                          rotate = "oblimin", fm = "minres"))
+as.data.frame(unclass(f2$loadings)) |> rownames_to_column("item_uid") |>
+  left_join(meta |> select(item_uid, question_type), by = "item_uid") |>
+  group_by(question_type) |>
+  summarise(n = n(), MR1 = round(mean(MR1), 2), MR2 = round(mean(MR2), 2),
+            .groups = "drop") |>
+  knitr::kable(caption = glue("2-factor EFA mean loadings by question type (factor r = {round(f2$Phi[1,2],2)}; {round(sum(f2$Vaccounted['Proportion Var',])*100)}% variance)"))
+```
+
+A 2-factor solution doesn't cleanly separate question types onto distinct
+factors (everything loads modestly on MR1), confirming there isn't a tidy
+2–3 sub-construct structure to recover.
+
+# 3. Would a sub-scale beat the full composite?
+
+Compare the full item set against targets-only and false-belief-only on
+unidimensionality, marginal reliability, and age validity (DE).
+
+```{r subscale, cache=TRUE}
+rel <- function(items) {
+  m <- de_mat[, intersect(colnames(de_mat), items), drop = FALSE]
+  m <- m[, apply(m, 2, \(x) length(unique(x[!is.na(x)])) > 1), drop = FALSE]
+  m <- m[rowSums(!is.na(m)) > 0, , drop = FALSE]
+  rho <- suppressWarnings(tetrachoric(m, smooth = TRUE)$rho)
+  e <- eigen(rho)$values
+  fit <- mirt(m, 1, itemtype = "Rasch", verbose = FALSE, technical = list(NCYCLES = 3000))
+  tibble(n_items = ncol(m), ev1_ev2 = e[1]/e[2],
+         marginal_reliability = as.numeric(marginal_rxx(fit)))
+}
+target_items <- meta |> filter(!is_control) |> pull(item_uid)
+fb_items     <- meta |> filter(question_type == "false_belief") |> pull(item_uid)
+
+psc <- tr |> filter(dataset == "pilot_mpieva_de_main", !is.na(age)) |>
+  group_by(run_id, age) |>
+  summarise(all = mean(correct),
+            targets = mean(correct[!is_control]),
+            fb = mean(correct[question_type == "false_belief"]), .groups = "drop")
+agecor <- c(all = cor(psc$all, psc$age, use="complete.obs"),
+            targets = cor(psc$targets, psc$age, use="complete.obs"),
+            fb = cor(psc$fb, psc$age, use="complete.obs"))
+
+bind_rows(
+  rel(colnames(de_mat)) |> mutate(scale = "all items", age_validity = agecor["all"]),
+  rel(target_items)     |> mutate(scale = "targets only", age_validity = agecor["targets"]),
+  rel(fb_items)         |> mutate(scale = "false-belief only", age_validity = agecor["fb"])
+) |> select(scale, n_items, ev1_ev2, marginal_reliability, age_validity) |>
+  knitr::kable(digits = 3, caption = "Sub-scale comparison (DE)")
+```
+
+**The false-belief core scale does not pan out.** It is no more unidimensional
+(ev1/ev2 ≈ 1.9, same as full), markedly *less* reliable (~0.62 vs 0.92, it has
+far fewer items), and *no* more age-valid (r ≈ 0.40, same as full). Targets-only
+is similar to all-items. So there is no sub-scale that buys a cleaner or more
+valid measure than the full composite.
+
+# Synthesis
+
+- **ToM is a reliable but heterogeneous composite, not a clean unidimensional
+  construct.** Inter-item correlations are uniformly low (~0.13); the full
+  scale's reliability (0.92) comes from aggregating many weakly-related items.
+- **No tidy sub-construct structure exists to recover.** Neither story-construct
+  scheme organizes the covariance; question type does so slightly (within-type
+  r ≈ 0.20) but not enough to define clean factors. The story-testlet
+  (dependency) effect is real but weak.
+- **Sub-scaling doesn't help.** A false-belief-only scale is less reliable and
+  no more age-valid than the full composite.
+- **Practical recommendation:** keep using the full-composite θ as an "overall
+  social reasoning" score; don't over-interpret it as a pure construct, and
+  don't bother carving sub-scales from this data. If a cleaner construct is the
+  goal, it likely needs item/design revision (more items per dimension,
+  reduced reliance on near-ceiling controls), not re-scoring.
+- **Caveat:** DE-only, sparse (CAT-like) data limits factor-analytic precision;
+  the multidimensionality is partly real (low item correlations) and partly
+  noise. A bifactor / testlet IRT model would be the principled next step but is
+  risky at this sample size.

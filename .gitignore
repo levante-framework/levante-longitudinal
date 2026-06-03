@@ -2,6 +2,21 @@
 .Rhistory
 .Rapp.history
 
+# Cached data + downloaded artifacts (regenerate from notebooks; some include
+# task content / de-identified data we don't version here)
+data/
+
+# Rendered notebook outputs
+*_files/
+*.html
+
+# Session / agent + reference material
+.claude/
+papers/
+
+# Large local files
+trials.csv
+
 # Session Data files
 .RData
 .RDataTmp

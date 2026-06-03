@@ -93,6 +93,10 @@ bad_wide <- bad_long |>
 ggplot(bad_wide, aes(x = score_diff)) +
   geom_histogram(binwidth = .1) + 
   facet_wrap(~task_id)
+
+ggplot(filter(bad_wide, task_id == "vocab"), aes(x = score_diff)) +
+  geom_histogram(binwidth = .1) + 
+  facet_wrap(~task_id)
   
 ```
 
@@ -101,6 +105,18 @@ View(bad_wide)
 ```
 
 Zoom in on trials. 
+
+Vocab only. 
+
+```{r}
+ggplot(filter(bad_long, task_id=="vocab"),
+       aes(x = age, y = score, col = dataset)) + 
+  geom_line(aes(group = user_id), alpha = .5) + 
+  facet_wrap(~task_id, scales = "free") + 
+  theme_bw() + 
+  theme(legend.position = "bottom", legend.direction = "vertical")
+```
+
 
 ```{r}
 de_trials <- rlevante::get_trials(data_source = "pilot_mpieva_de_main_processed:8wjx", 

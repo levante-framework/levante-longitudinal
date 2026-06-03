@@ -1,0 +1,207 @@
+---
+title: "Stories (ToM) — multigroup anchored DIF (DE vs CO)"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 6
+execute:
+  warning: false
+  message: false
+---
+
+# Question
+
+The logistic-DIF screen in `stories_tom.html` flagged ~every shared item,
+because the production scores come from **separate `by_language` calibrations**
+that aren't on a common scale. Here we do it properly: fit one **multigroup IRT
+model** across DE (de-DE) and CO-Bogotá (es-CO) on the items administered in
+both, link the scale with **anchor items**, and isolate genuine item-level DIF.
+
+Method:
+
+1. Items administered with n ≥ 50 in both groups (27 shared items).
+2. Fit a multigroup Rasch model, fully constrained (scalar) + free group
+   mean/variance.
+3. **All-other-anchor screen** (free each item's difficulty, LR test) → items
+   that don't flag become the anchor set.
+4. **Purified re-fit**: constrain the anchor set equal across groups, free the
+   rest, and read each item's per-group difficulty → signed DIF on a common
+   scale.
+
+Caveats: only DE vs CO (the two groups with enough shared data; en-US/Western
+has too few shared items for a stable third group). Cross-language DIF on
+*translated* items is partly expected — the question is *which* items and *how
+much*. Rasch (no guessing) is used for an interpretable difficulty-DIF screen.
+
+```{r setup}
+source(here::here("common.R"))
+library(mirt); library(ggrepel)
+meta <- read_rds(here::here("data/tom_meta/tom_item_metadata.rds")) |>
+  filter(!is_hostile_attribution)
+tr <- load_levante_trials(task_ids = "theory-of-mind") |>
+  filter(!str_starts(item_uid, "ha_"),
+         dataset %in% c("pilot_mpieva_de_main", "pilot_uniandes_co_bogota")) |>
+  mutate(correct = as.numeric(correct),
+         group = recode(dataset, pilot_mpieva_de_main = "DE",
+                        pilot_uniandes_co_bogota = "CO"))
+shared <- tr |> group_by(item_uid, group) |> summarise(n = n(), .groups = "drop") |>
+  filter(n >= 50) |> count(item_uid) |> filter(n == 2) |> pull(item_uid)
+wide <- tr |> filter(item_uid %in% shared) |> distinct(run_id, item_uid, .keep_all = TRUE) |>
+  select(run_id, group, item_uid, correct) |>
+  pivot_wider(names_from = item_uid, values_from = correct)
+grp <- wide$group; mat <- wide |> select(-run_id, -group) |> as.matrix()
+ok <- map_lgl(colnames(mat), \(c) all(tapply(mat[,c], grp, \(x) length(unique(x[!is.na(x)])) > 1)))
+mat <- mat[, ok]; keep <- rowSums(!is.na(mat)) > 0; mat <- mat[keep, ]; grp <- grp[keep]
+```
+
+`r ncol(mat)` shared items; `r sum(grp=="DE")` DE and `r sum(grp=="CO")` CO
+respondents.
+
+```{r dif, cache=TRUE}
+mod0 <- multipleGroup(mat, 1, group = grp, itemtype = "Rasch",
+        invariance = c("slopes","intercepts","free_means","free_var"),
+        verbose = FALSE, technical = list(NCYCLES = 3000))
+d1 <- DIF(mod0, which.par = "d", scheme = "drop", items2test = 1:ncol(mat))
+anchors <- rownames(d1)[d1$p >= .05]
+
+mod_anch <- multipleGroup(mat, 1, group = grp, itemtype = "Rasch",
+        invariance = c(anchors, "free_means", "free_var"),
+        verbose = FALSE, technical = list(NCYCLES = 3000))
+co <- coef(mod_anch, simplify = TRUE)
+es <- tibble(item_uid = colnames(mat),
+             b_DE = -co$DE$items[,"d"], b_CO = -co$CO$items[,"d"]) |>
+  mutate(dif = b_CO - b_DE, is_anchor = item_uid %in% anchors) |>
+  left_join(meta |> select(item_uid, question_type, old_group, tom_scenario),
+            by = "item_uid")
+```
+
+# Results
+
+`r length(anchors)` of `r ncol(mat)` items are invariant (anchors); the rest
+show DIF. Group ability difference is absorbed by the free group mean, so `dif`
+is item-specific non-invariance on the common scale.
+
+```{r dif-table}
+es |> filter(!is_anchor) |> arrange(desc(abs(dif))) |>
+  mutate(across(c(b_DE, b_CO, dif), \(x) round(x, 2))) |>
+  select(item_uid, question_type, b_DE, b_CO, `dif (CO-DE)` = dif) |>
+  knitr::kable(caption = "Items with DIF (+ = harder for CO at matched ability)")
+```
+
+```{r dif-by-type}
+es |> group_by(question_type) |>
+  summarise(n = n(), n_anchor = sum(is_anchor),
+            mean_abs_dif = mean(abs(dif)), .groups = "drop") |>
+  arrange(desc(mean_abs_dif)) |>
+  knitr::kable(digits = 2, caption = "DIF magnitude by question type")
+```
+
+```{r dif-scatter, fig.height=5.5}
+lims <- range(c(es$b_DE, es$b_CO))
+es |> ggplot(aes(b_DE, b_CO, color = question_type, shape = is_anchor)) +
+  geom_abline(slope = 1, intercept = 0, lty = 3, color = "grey50") +
+  geom_point(size = 2.5, alpha = 0.8) +
+  ggrepel::geom_text_repel(
+    data = es |> filter(abs(dif) > 1),
+    aes(label = str_remove(item_uid, "^tom_")), size = 2.6, show.legend = FALSE) +
+  scale_color_brewer(palette = "Set2", name = NULL) +
+  scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1),
+                     labels = c("DIF item", "anchor (invariant)"), name = NULL) +
+  coord_equal(xlim = lims, ylim = lims) +
+  labs(x = "Item difficulty in DE (logits)", y = "Item difficulty in CO (logits)",
+       title = "ToM item difficulty: DE vs CO on a common (anchored) scale",
+       subtitle = "On-diagonal = invariant; off-diagonal = DIF. Labeled = |DIF| > 1 logit.") +
+  theme(legend.position = "bottom")
+```
+
+# Measurement invariance: do we reach scalar?
+
+The DIF results suggest controls are what breaks comparability. We test this
+formally with the nested invariance hierarchy (Rasch: configural = item
+difficulties free across groups; scalar = difficulties constrained equal, group
+mean/variance free). We compare three item sets.
+
+```{r invariance, cache=TRUE}
+build <- function(item_set) {
+  w <- tr |> filter(item_uid %in% item_set) |> distinct(run_id, item_uid, .keep_all=TRUE) |>
+    select(run_id, group, item_uid, correct) |>
+    pivot_wider(names_from=item_uid, values_from=correct)
+  g <- w$group; mm <- w |> select(-run_id, -group) |> as.matrix()
+  ok <- map_lgl(colnames(mm), \(c) all(tapply(mm[,c], g, \(x) length(unique(x[!is.na(x)]))>1)))
+  mm <- mm[, ok]; keep <- rowSums(!is.na(mm))>0; list(mat=mm[keep,], grp=g[keep])
+}
+fit_pair <- function(item_set) {
+  d <- build(item_set)
+  conf <- multipleGroup(d$mat,1,group=d$grp,itemtype="Rasch",verbose=FALSE,technical=list(NCYCLES=3000))
+  scal <- multipleGroup(d$mat,1,group=d$grp,itemtype="Rasch",
+            invariance=c("slopes","intercepts","free_means","free_var"),
+            verbose=FALSE,technical=list(NCYCLES=3000))
+  list(d=d, conf=conf, scal=scal)
+}
+target_items <- meta |> filter(!is_control) |> pull(item_uid)
+all_fit <- fit_pair(shared)
+tgt_fit <- fit_pair(intersect(shared, target_items))
+
+# partial scalar on targets: free the DIF targets, anchor the rest
+dt <- tgt_fit$d
+dif_t <- DIF(tgt_fit$scal, which.par="d", scheme="drop", items2test=1:ncol(dt$mat))
+free_t <- rownames(dif_t)[dif_t$p < .05]; anch_t <- setdiff(colnames(dt$mat), free_t)
+part <- multipleGroup(dt$mat,1,group=dt$grp,itemtype="Rasch",
+          invariance=c(anch_t,"free_means","free_var"),verbose=FALSE,technical=list(NCYCLES=3000))
+
+comp <- function(constrained, conf, label, n_items, scheme) {
+  a <- as.data.frame(anova(constrained, conf, verbose=FALSE))
+  tibble(`item set`=label, `n items`=n_items, model=scheme,
+         X2=round(a$X2[2],1), df=a$df[2], p=signif(a$p[2],2),
+         dBIC = round(a$BIC[1]-a$BIC[2],1))
+}
+bind_rows(
+  comp(all_fit$scal, all_fit$conf, "all (with controls)", ncol(all_fit$d$mat), "scalar vs configural"),
+  comp(tgt_fit$scal, tgt_fit$conf, "targets only",        ncol(tgt_fit$d$mat), "scalar vs configural"),
+  comp(part,         tgt_fit$conf, "targets only",        ncol(dt$mat), glue("partial scalar ({length(anch_t)} anchors, {length(free_t)} freed)"))
+) |> knitr::kable(caption = "Invariance tests (dBIC>0 favors the constrained model)")
+```
+
+- **With controls, scalar invariance is decisively rejected** (χ²/df ≈ 29; BIC
+  prefers configural by ~580).
+- **Dropping controls cuts the misfit ~3.5×** (χ²/df ≈ 8; BIC gap shrinks to
+  ~30) — but **strict scalar is still rejected** (p < .001). At n ≈ 510 the LR
+  test detects even ~0.5-logit DIF, so strict scalar is a stringent bar.
+- **Partial scalar invariance holds**: anchoring the invariant target items and
+  freeing the DIF ones yields a model statistically indistinguishable from
+  configural (p ≈ 0.8) and **preferred by BIC**. So a target-based common scale
+  linking DE and CO is achievable — just not with every item equal.
+
+This matches the core-tasks paper's finding that ToM reached only *configural*
+invariance overall: the controls are a major reason, and a partial-scalar
+solution on the target items is the realistic path to a cross-site scale.
+
+# Synthesis
+
+- **The target ToM questions are reasonably comparable across DE and CO.**
+  False-belief and emotion items have small DIF (mean |DIF| ≈ 0.5 logits) and
+  most serve as invariant anchors. The core developmental items travel
+  across the two languages better than the global logistic screen implied.
+- **The comprehension controls are the dominant source of cross-language
+  non-invariance** — mean |DIF| ≈ 1.9 logits (≈ 4× the target items), with the
+  largest single shifts (up to ~5 logits). Reality-check questions evidently
+  function very differently after translation/adaptation.
+- This dovetails with the controls thread: controls slightly *help* within-site
+  reliability but are the main thing breaking *cross-site* comparability. For
+  cross-site analyses they are the items to treat with most caution (or exclude
+  from a cross-site invariant scale); within a single site they're harmless.
+- There is a usable **invariant anchor set** (`r length(anchors)` items, mostly
+  false-belief/emotion targets) that could link DE and CO on a common ToM scale
+  if a multigroup calibration is adopted in the pipeline.
+
+```{r save}
+write_rds(es, here::here("data/tom_multigroup_dif.rds"))
+```
+
+Caveats: 2 groups only, n ≈ 510, Rasch without a guessing floor, and cross-
+language DIF is partly expected by design. A 3-group fit (adding en-US) and a
+guessing-aware model would refine the magnitudes, but the qualitative pattern —
+controls non-invariant, targets largely invariant — is the actionable result.
