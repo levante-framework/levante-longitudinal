@@ -70,13 +70,19 @@ children with ≥ 2 administrations (longitudinal signal).
 | ROAR-Word | swr | 1610 | 195 | **deep-dived** (`tasks/roar_word.qmd`) |
 | Memory | memory-game | 1717 | 284 | **deep-dived** (`tasks/memory.qmd`) — grid OK, DROP likely obsolete |
 | Hearts & Flowers | hearts-and-flowers | 1685 | 280 | **deep-dived** (`tasks/hearts_and_flowers.qmd`) — 2PL > Rasch, start trials low-info |
-| Pattern Matching | matrix-reasoning | 1536 | 263 | not yet — T2>T1 training question |
+| Pattern Matching | matrix-reasoning | 1536 | 263 | **deep-dived** (`tasks/training_vs_development.qmd`) — no practice effect on corrected data |
+| Sentence Understanding | trog | 1465 | 229 | **deep-dived** (`tasks/training_vs_development.qmd`) — T2>T1 was the bug |
 | Shape Rotation | mental-rotation | 1482 | 247 | not yet |
-| Sentence Understanding | trog | 1465 | 229 | not yet — T2>T1 training question |
 | ROAR-Sentence | sre | 1622 | 202 | not yet |
 | Same & Different | same-different-selection | 1066 | 201 | not yet — scoring update pending |
 | ROAR-Phoneme | pa | 1554 | 69 | not yet |
 
-**Suggested next deep dives:** Pattern Matching + Sentence Understanding (test
-the training-vs-development T2 > T1 question on corrected data), then Same &
-Different (scoring update pending) and Shape Rotation.
+**Training vs development (PM & SU):** the release-notes "T2 > T1" did **not**
+replicate on corrected data — it was largely the scoring bug. The one clean
+longitudinal cell (Leipzig Pattern Matching, mode-stable + equal length) shows
+no practice gain. The question can't be fully resolved with current data
+(mode-boundary crossings, varying test length, low item overlap); a fixed-form
+fixed-length retest would isolate it.
+
+**Suggested next deep dives:** Shape Rotation, Same & Different (scoring update
+pending), then the ROAR literacy tasks (sre, pa).
