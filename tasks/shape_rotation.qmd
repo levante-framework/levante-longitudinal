@@ -98,10 +98,55 @@ tr |> filter(!item_uid %in% ip$item_uid) |>
 ```
 
 Eight extra 2-D `polygon` stimuli appear in the data but weren't calibrated —
-all very low-n (≤ 66 trials). They're a minor housekeeping item (exclude from
-scoring), not a problem with the core duck/rabbit/3-D set. Discrimination is
-healthy for 2-D (≈ 1.5–2.6, higher at larger angles) and lower for 3-D
-(≈ 0.9–1.2), consistent with 3-D being harder and noisier.
+all very low-n (≤ 66 trials). Discrimination is healthy for 2-D (≈ 1.5–2.6,
+higher at larger angles) and lower for 3-D (≈ 0.9–1.2), consistent with 3-D
+being harder and noisier.
+
+## Preliminary: are the new polygons "intermediate"?
+
+The polygons are new stimuli intended to sit **between** the 2-D animals (easy)
+and the 3-D shapes (hard). A quick accuracy-by-angle look across the three
+stimulus classes:
+
+```{r polygon-prelim, fig.height=4.5}
+cls <- tr |>
+  mutate(angle = as.integer(str_extract(item_uid, "[0-9]+$")),
+         klass = case_when(str_detect(item_uid, "polygon") ~ "2D polygon (new)",
+                           str_detect(item_uid, "_2d_") ~ "2D animal",
+                           str_detect(item_uid, "_3d_") ~ "3D shape")) |>
+  filter(!is.na(angle), !is.na(klass)) |>
+  group_by(klass, angle) |>
+  summarise(acc = mean(correct, na.rm = TRUE), n = n(), .groups = "drop")
+
+cls |>
+  ggplot(aes(x = angle, y = acc, color = klass, group = klass)) +
+  geom_hline(yintercept = 0.5, lty = 3, color = "red") +
+  geom_line(linewidth = 0.9) +
+  geom_point(aes(size = n), alpha = 0.85) +
+  scale_color_manual(values = c("2D animal" = "#268bd2",
+                                "2D polygon (new)" = "#6c71c4",
+                                "3D shape" = "#cb4b16")) +
+  scale_x_continuous(breaks = c(20,40,80,120,160)) +
+  labs(x = "Rotation angle (degrees)", y = "Accuracy",
+       title = "Accuracy by angle: animals vs new polygons vs 3-D",
+       subtitle = "Red = chance. Point size = n (polygons are very sparse).",
+       color = "Stimulus class", size = "n trials")
+```
+
+```{r polygon-tab}
+cls |> filter(klass == "2D polygon (new)") |>
+  knitr::kable(digits = 3, caption = "Polygon accuracy by angle (note tiny n)")
+```
+
+**Caveat — and a flag.** With only 10–108 trials per polygon cell this is
+preliminary, but two things stand out: (1) the polygons do *not* sit cleanly
+between animals and 3-D — at large angles their accuracy (≈ 0.78–0.82) is near
+the animals and above the 3-D shapes; and (2) polygon accuracy **rises** with
+angle (0.30 at 40° → 0.82 at 160°), the *reverse* of the normal mental-rotation
+effect seen for animals and 3-D. The 40° point is just 10 trials, so this could
+be noise — but a reversed angle gradient on a new stimulus warrants checking
+the polygon items (answer keys / rotation rendering) and gathering more data
+before calibrating them in.
 
 # 4. Cross-site consistency
 
