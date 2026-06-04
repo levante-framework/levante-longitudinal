@@ -1,0 +1,143 @@
+---
+title: "ROAR literacy tasks — Sentence (SRE) & Phoneme (PA)"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 5
+execute:
+  warning: false
+  message: false
+---
+
+# Scope
+
+The two remaining ROAR literacy measures, which use **different scoring** from
+the core tasks:
+
+- **ROAR-Phoneme (`pa`)** — phonological awareness, scored with a
+  **by-language Rasch** IRT model (separate es-CO and en-US calibrations; no
+  German). Items: `pa_{subtype}_{word}` with subtypes **fsm** (first-sound
+  matching), **lsm** (last-sound matching), **del** (deletion).
+- **ROAR-Sentence (`sre`)** — sentence reading efficiency, a **speeded** task
+  scored as a guessing-adjusted, z-scored correct-count (`(correct − incorrect)
+  / 180`, standardized) — **not** an IRT θ, so it is not on the same scale as
+  the other tasks and individual item difficulties aren't calibrated.
+
+```{r setup}
+source(here::here("common.R"))
+sc <- read_rds(here("data/scores_all_sites.rds"))
+tr <- load_levante_trials(task_ids = c("sre","pa")) |> mutate(correct = as.numeric(correct))
+```
+
+# ROAR-Phoneme (PA)
+
+## Item difficulty by subtype
+
+```{r pa-subtype}
+pa_ip <- load_item_parameters() |> filter(task_id == "pa") |>
+  mutate(subtype = str_extract(item_uid, "(?<=pa_)[a-z]+"),
+         subtype = recode(subtype, fsm = "first-sound", lsm = "last-sound",
+                          del = "deletion"))
+pa_ip |> group_by(subset, subtype) |>
+  summarise(n_items = n(), mean_difficulty = mean(difficulty),
+            .groups = "drop") |>
+  pivot_wider(names_from = subset, values_from = c(n_items, mean_difficulty)) |>
+  knitr::kable(digits = 2, caption = "PA mean item difficulty by subtype × language")
+```
+
+```{r pa-diff-plot, fig.height=4.5}
+pa_ip |>
+  ggplot(aes(x = subtype, y = difficulty, color = subset)) +
+  geom_hline(yintercept = 0, lty = 3, color = "grey70") +
+  geom_jitter(width = 0.15, alpha = 0.6) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.4, linewidth = 0.4) +
+  scale_color_brewer(palette = "Set1", name = "Language") +
+  labs(x = NULL, y = "Item difficulty (logits)",
+       title = "PA item difficulty by phoneme-manipulation subtype")
+```
+
+First-sound matching is easiest, last-sound matching harder — the expected
+ordering for phonological-awareness manipulations. (Deletion items appear in
+the trial data but are sparsely calibrated.)
+
+## Age validity
+
+```{r pa-age, fig.height=4.5}
+sc |> filter(task_id == "pa", !is.na(score), !is.na(age)) |>
+  ggplot(aes(x = age, y = score, color = dataset_label)) +
+  geom_point(alpha = 0.25, size = 0.7) +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_brewer(palette = "Set1", name = NULL) +
+  labs(x = "Age (years)", y = "PA ability (θ)",
+       title = "ROAR-Phoneme rises with age") +
+  theme(legend.position = "bottom")
+```
+
+```{r pa-age-tab}
+sc |> filter(task_id == "pa", !is.na(score), !is.na(age)) |>
+  group_by(dataset_label) |> filter(n() >= 30) |>
+  summarise(n = n(), cor_age = cor(score, age), .groups = "drop") |>
+  knitr::kable(digits = 2, caption = "PA age correlation by site (no German PA)")
+```
+
+# ROAR-Sentence (SRE)
+
+A speeded efficiency measure: the score is a standardized guessing-adjusted
+count, so its scale is task-internal (mean ≈ 0). All four data-rich sites have
+it.
+
+```{r sre-dist, fig.height=4}
+sc |> filter(task_id == "sre", !is.na(score)) |>
+  ggplot(aes(x = score, fill = dataset_label)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_brewer(palette = "Set1", name = NULL) +
+  labs(x = "SRE score (guessing-adjusted, z-scaled)", y = "Density",
+       title = "SRE score distribution by site") +
+  theme(legend.position = "bottom")
+```
+
+```{r sre-age, fig.height=4.5}
+sc |> filter(task_id == "sre", !is.na(score), !is.na(age)) |>
+  ggplot(aes(x = age, y = score, color = dataset_label)) +
+  geom_point(alpha = 0.25, size = 0.7) +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_brewer(palette = "Set1", name = NULL) +
+  labs(x = "Age (years)", y = "SRE score",
+       title = "ROAR-Sentence rises with age") +
+  theme(legend.position = "bottom")
+```
+
+```{r sre-speed}
+# the speeded nature: how many sentences reached, and accuracy among reached
+tr |> filter(task_id == "sre") |>
+  group_by(dataset_label, run_id) |>
+  summarise(n_reached = n(), acc = mean(correct, na.rm = TRUE), .groups = "drop") |>
+  group_by(dataset_label) |>
+  summarise(median_sentences_reached = median(n_reached),
+            median_accuracy = round(median(acc), 2), .groups = "drop") |>
+  knitr::kable(caption = "SRE is speeded: sentences reached varies; accuracy among reached is high")
+```
+
+```{r sre-age-tab}
+sc |> filter(task_id == "sre", !is.na(score), !is.na(age)) |>
+  group_by(dataset_label) |> filter(n() >= 30) |>
+  summarise(n = n(), cor_age = cor(score, age), .groups = "drop") |>
+  knitr::kable(digits = 2, caption = "SRE age correlation by site")
+```
+
+# Verdict
+
+- **Both ROAR literacy measures are valid** — each rises with age at every
+  site (PA r ≈ 0.34–0.54; SRE r ≈ 0.27–0.63).
+- **PA** has a sensible internal structure: first-sound < last-sound in
+  difficulty. It is calibrated **by language** (es-CO, en-US) with no German
+  data, so PA scores are not on a single cross-language scale.
+- **SRE** is a speeded, guessing-adjusted **count** measure — interpret it as
+  reading *efficiency*, on a task-internal z-scale, not as an IRT θ comparable
+  to the other tasks. The speeded design means "sentences reached" is part of
+  the signal.
+- No scoring red flags for either; both are usable as literacy
+  covariates/validators (as they are used in the core-tasks paper).

@@ -72,17 +72,16 @@ children with ≥ 2 administrations (longitudinal signal).
 | Hearts & Flowers | hearts-and-flowers | 1685 | 280 | **deep-dived** (`tasks/hearts_and_flowers.qmd`) — 2PL > Rasch, start trials low-info |
 | Pattern Matching | matrix-reasoning | 1536 | 263 | **deep-dived** (`tasks/training_vs_development.qmd`) — no practice effect on corrected data |
 | Sentence Understanding | trog | 1465 | 229 | **deep-dived** (`tasks/training_vs_development.qmd`) — T2>T1 was the bug |
-| Shape Rotation | mental-rotation | 1482 | 247 | not yet |
-| ROAR-Sentence | sre | 1622 | 202 | not yet |
-| Same & Different | same-different-selection | 1066 | 201 | not yet — scoring update pending |
-| ROAR-Phoneme | pa | 1554 | 69 | not yet |
+| Shape Rotation | mental-rotation | 1482 | 247 | **deep-dived** (`tasks/shape_rotation.qmd`) — textbook angle effect |
+| ROAR-Sentence | sre | 1622 | 202 | **deep-dived** (`tasks/roar_literacy.qmd`) — speeded efficiency, age-valid |
+| ROAR-Phoneme | pa | 1554 | 69 | **deep-dived** (`tasks/roar_literacy.qmd`) — fsm<lsm difficulty, age-valid |
+| Same & Different | same-different-selection | 1066 | 201 | **pending new scoring models** (not yet implemented) |
 
 **Training vs development (PM & SU):** the release-notes "T2 > T1" did **not**
 replicate on corrected data — it was largely the scoring bug. The one clean
 longitudinal cell (Leipzig Pattern Matching, mode-stable + equal length) shows
-no practice gain. The question can't be fully resolved with current data
-(mode-boundary crossings, varying test length, low item overlap); a fixed-form
-fixed-length retest would isolate it.
+no practice gain. A fixed-form fixed-length retest would isolate it.
 
-**Suggested next deep dives:** Shape Rotation, Same & Different (scoring update
-pending), then the ROAR literacy tasks (sre, pa).
+**Status:** 11 of 12 core/literacy tasks now have trial-level deep dives. Only
+**Same & Different** remains — deferred until its new scoring models are
+implemented in the pipeline.
