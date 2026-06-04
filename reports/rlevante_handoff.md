@@ -205,6 +205,30 @@ It's exported and documented as a stub, but what it's *for* (resolving the
 `_source_` table inside a Redivis notebook context) isn't clear from the docs.
 Either flag it as notebook-only or explain the use case.
 
+### 2h. The `item_parameters` table omits the guessing parameter (`g`) — easy to misread
+
+The curated `item_parameters` table (`levante_metadata_scoring:…:item_parameters`)
+exports **only `difficulty` and `discrimination`** per item, plus an `itemtype`
+label of `rasch` / `2pl`. It does **not** include the guessing parameter. But
+the *fitted* models carry a **fixed lower asymptote at each item's chance level**
+(`g = chance`, `est = FALSE`): `score_irt()` reconstructs the model by feeding the
+full `mirt::mod2values()` table — `g` rows included — into `mirt(pars = …)`, so
+the released θ̂ genuinely account for guessing. Confirmed by reading the model
+records directly (matrix `g = 0.25`, mental-rotation `0.5`, math per-item
+`{0, 0.067, 0.25, 0.33, 0.5}`).
+
+The trap: anyone who reconstructs the item response function from
+`item_parameters` alone (as is natural for residual/person-fit work,
+information curves, or independent re-scoring) will build a **plain logistic
+with no lower asymptote**, which silently mismatches the scoring model — inflating
+residuals at low ability and manufacturing spurious "reliable" person misfit.
+(We hit exactly this in `06_within_child_variability.qmd` before correcting it.)
+Two cheap fixes: (a) add a `guessing` column to `item_parameters` (even if it is
+just the fixed chance value), and/or (b) document that the authoritative,
+complete parameter set lives in the model records' `model_vals()`
+(`mod2values`), not in `item_parameters`. **No scoring bug — purely a
+metadata-completeness / documentation issue.**
+
 ---
 
 ## 3. Scoring-pipeline context worth capturing

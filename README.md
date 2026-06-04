@@ -51,14 +51,16 @@ are git-ignored.
   three naive consistency indices (RT intra-individual variability, IRT person-misfit
   infit, 2-wave growth deviation) show **near-zero cross-task generality** (r≈0.05)
   and are **mutually uncorrelated** (|r|<0.1) → no general "variability trait" with
-  naive estimators. RT-IIV is cleanly measured (rel ≈0.45–0.85) and *not* an ability
-  proxy but is task-specific and flat with age; person-misfit is **largely inverse
-  ability** (r≈−0.61) and broken on poorly-targeted CAT (matrix). The **model-based
-  upgrades (§4)** sharpen this into a robust null: guessing-aware person-fit (folding
-  the recorded `chance` level in as a fixed asymptote — no 3PL needed) fixes
-  calibration + the ability confound but shows de-confounded misfit has ≈0
-  reliability; 2-wave random-slope models can't identify individual growth
-  (slope reliability ≈0 — the naive 2-wave reliabilities were optimistic); and a
+  estimators. RT-IIV is cleanly measured (rel ≈0.45–0.85) and *not* an ability
+  proxy but is task-specific and flat with age. **Person-misfit, scored against
+  the model's actual IRF, carries almost no usable signal**: the scoring models
+  already apply a *fixed guessing asymptote at each item's chance level*
+  (confirmed in the model records — the curated `item_parameters` table just
+  omits `g`), and once person-fit uses that same IRF it is well-calibrated and
+  free of the extremity confound but has ≈0 reliability (the earlier "reliable,
+  age-declining, ability-confounded" misfit was an artifact of a mis-specified
+  plain-logistic IRF). 2-wave random-slope models can't identify individual
+  growth (slope reliability ≈0 — naive 2-wave reliabilities were optimistic); a
   variance-components model puts the stable-person share of RT-IIV at just ~4%.
   Measuring variability as a *trait* needs more waves + within-task manipulations.
 - **The battery is highly compressible** (`05_battery_design.qmd`): because the

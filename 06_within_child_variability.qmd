@@ -83,7 +83,12 @@ extract_task <- function(tid){
     tr <- tr |> inner_join(ipx |> transmute(item_uid, b = difficulty, a = discrimination) |>
                              distinct(item_uid, .keep_all = TRUE), by = "item_uid")
   }
-  tr <- tr |> mutate(P = pmin(pmax(1/(1+exp(-a*(theta-b))), .001), .999),
+  # IRF must match the scoring model: the fitted mirt models carry a FIXED
+  # guessing asymptote at each item's chance level (g = chance, est=FALSE), so
+  # the person-fit response function is P = c + (1-c)·logistic, not plain logistic.
+  tr <- tr |> mutate(c = ifelse(is.na(chance), 0, chance),
+                     irf = 1/(1+exp(-a*(theta-b))),
+                     P = pmin(pmax(c + (1-c)*irf, .001), .999),
                      w = P*(1-P), r2 = (correct - P)^2)
   # run-level indices
   iiv <- tr |> filter(!is.na(rt_numeric), rt_numeric > 200, rt_numeric < 30000, correct == 1) |>
@@ -118,11 +123,12 @@ rel_tab |> arrange(desc(iiv_rel)) |> mutate(across(where(is.numeric), \(x) round
 ```
 
 **Reliability is the headline.** RT-IIV is reliable enough to use on most tasks
-(≈ 0.45–0.85, highest where trials are many — H&F, vocab). Person-misfit (infit)
-is reliable on some tasks (H&F 0.94, mental rotation 0.92, ToM 0.69, math 0.59)
-but **near-zero or negative on others** (TROG, Same & Different) — naive infit is
-simply too noisy there. We carry forward only tasks where each index clears a
-modest reliability bar (≥ 0.4).
+(≈ 0.45–0.85, highest where trials are many — H&F, vocab). Person-misfit (infit),
+computed with the **scoring-matched response function** (a fixed guessing
+asymptote at each item's chance level — see §4), is **≈ 0 on every task** (the
+best, H&F, reaches only 0.36; the rest are indistinguishable from zero).
+Correctly specified, person-fit simply has very little reliable between-child
+variance to measure. RT-IIV clears a 0.4 bar; person-misfit does not.
 
 ## Two caveats baked in
 
@@ -135,13 +141,14 @@ index_runs |> group_by(short) |>
   knitr::kable(caption = "Person-misfit: calibration (mean infit ≈ 1 = good) and the ability confound")
 ```
 
-- **Matrix-reasoning misfit is unusable** (infit mean ≫ 1): its adaptive engine
-  administers items far harder than the children's ability (item b ≈ 2.2 vs
-  θ ≈ −1.3), so 4-AFC **guessing** dominates the residuals. We exclude matrix
-  from the misfit analyses.
-- **Misfit is confounded with ability** (infit vs |θ| ≈ 0.1–0.7, as anticipated):
-  extreme-ability children look more "surprising" because they see more
-  off-target items. We **partial out ability** in all misfit analyses below.
+With the scoring-matched IRF, person-misfit is **well-calibrated on every task**
+(mean infit ≈ 0.93, matrix included — its earlier blow-up was a mis-specified
+response function, not the data), and the **ability-extremity confound largely
+disappears** (infit vs |θ| now |r| ≤ ~0.2, versus 0.1–0.7 under the plain-logistic
+IRF that ignored guessing). The problem is neither calibration nor confound — it
+is that, correctly specified, per-task misfit has **≈ 0 reliability** (table
+above). We therefore report it below for completeness, but it cannot support
+individual-difference claims.
 
 # 2. Do the variability measures hang together?
 
@@ -150,7 +157,10 @@ We keep indices on tasks where they are at least modestly reliable
 
 ```{r keep-reliable}
 iiv_ok   <- rel_tab |> filter(iiv_rel   >= 0.4) |> pull(short)
-infit_ok <- setdiff(rel_tab |> filter(infit_rel >= 0.4) |> pull(short), "matrix")
+# person-misfit is now scoring-matched (guessing-aware) on every task, incl. matrix;
+# its reliabilities (above) are ≈0, so we include all tasks here only to show it
+# carries no cross-task signal either.
+infit_ok <- rel_tab |> filter(!is.na(infit_rel)) |> pull(short)
 zt <- function(x) as.numeric(scale(x))
 zi <- index_runs |> group_by(short) |> mutate(iiv_z = zt(iiv), infit_z = zt(infit),
                                               theta_z = zt(theta)) |> ungroup()
@@ -177,11 +187,12 @@ tibble(index = c("RT-IIV","Person-misfit (infit)"),
   knitr::kable(caption = "Average cross-task correlation of each variability index (within child)")
 ```
 
-Cross-task generality is **near zero** for both indices (mean r ≈ 0.05–0.09).
-A child who is RT-variable on math is essentially *no more likely* to be
-RT-variable on vocabulary. Even allowing for attenuation by the indices' modest
-reliabilities, this is far too low to support a general "variability trait" —
-naive within-task variability is overwhelmingly **task-specific**.
+Cross-task generality is **near zero** for both indices (RT-IIV ≈ 0.05;
+person-misfit ≈ 0.11, though on a ≈ 0-reliability measure so not interpretable
+anyway). A child who is RT-variable on math is essentially *no more likely* to be
+RT-variable on vocabulary. Even allowing for attenuation, this is far too low to
+support a general "variability trait" — within-task variability is overwhelmingly
+**task-specific**.
 
 ## (b) Do the different indices correlate, beyond ability?
 
@@ -247,12 +258,14 @@ tibble(index = c("RT-IIV","Person-misfit","Growth deviation"),
 
 Two things stand out. First, the three indices are **mutually uncorrelated**
 (all |r| < 0.1, raw or ability-partialled) — they do not converge on a common
-"variability" dimension. Second, the **ability** picture splits sharply:
-RT-IIV and growth-deviation are essentially **unrelated to ability** (r ≈ ±0.05,
-so they are *not* just low-ability in disguise), but **person-misfit is heavily
-tied to ability** (r ≈ −0.61) — lower-ability children look far more
-"surprising," exactly the guessing/confound concern flagged at the outset. Naive
-misfit is, to a large degree, an inverse ability measure.
+"variability" dimension. Second, RT-IIV and growth-deviation are essentially
+**unrelated to ability** (r ≈ ±0.05, so they are *not* just low-ability in
+disguise). Person-misfit still shows a moderate negative tie to ability
+(r ≈ −0.52) even with the scoring-matched IRF: the *extremity* confound is gone
+(§1), but the small amount of stable misfit variance that survives aggregation
+across tasks is largely **lower-ability children responding less predictably**.
+Since per-task misfit is ≈ 0-reliable, the safe reading is that there is no
+usable misfit signal here beyond ability.
 
 For each (reliable) index we regress on age — pooled across tasks with a task
 random effect — and plot the per-task trends.
@@ -280,16 +293,16 @@ bind_rows(
   facet_wrap(~index, scales = "free_y") +
   scale_color_viridis_d(name = NULL) +
   labs(x = "Age (years)", y = "Index value",
-       title = "Age trends differ by index",
-       subtitle = "Person-misfit declines with age (but tracks rising ability); moment-to-moment RT variability is roughly flat")
+       title = "Neither variability index changes much with age",
+       subtitle = "Both RT-IIV and (scoring-matched) person-misfit are essentially flat across childhood")
 ```
 
-Only **person-misfit declines with age** (≈ −0.14/yr); **RT-IIV is essentially
-flat** (pooled slope ≈ 0). And the misfit decline is hard to read as maturing
-*consistency* per se: because misfit is so strongly tied to ability (above) and
-ability rises with age, the age trend in misfit may largely reflect children
-making fewer lucky guesses as they master more items — not an independent gain
-in response consistency.
+With the scoring-matched IRF, **neither index changes appreciably with age**:
+RT-IIV is flat (pooled slope ≈ 0) and person-misfit nearly so (≈ −0.02/yr). The
+steep misfit-with-age decline seen under the mis-specified IRF was, again, an
+artifact of ignoring guessing — older/higher-ability children produced fewer
+"surprising" lucky guesses *under the wrong model*; once the model accounts for
+guessing, that age trend largely evaporates.
 
 # Synthesis — naive (first-order) indices
 
@@ -309,12 +322,13 @@ A first, honest pass — and the headline is a **null on coherence**:
   on most tasks (≈ 0.45–0.85) and is **not** an ability proxy (r ≈ −0.05) — but
   it is task-specific and **flat with age**. So it is a sound per-task measure
   whose cross-situational meaning is unclear here.
-- **Person-misfit is largely an inverse ability measure.** Naive infit is
-  reliable on only some tasks, **broken on poorly-targeted adaptive tasks**
-  (matrix), and **heavily confounded with ability** (r ≈ −0.61); its age decline
-  probably just tracks fewer lucky guesses as ability rises. It needs
-  **guessing-aware person fit** before it can be trusted as anything other than
-  ability (done in §4.1 — no new 3PL required, the recorded chance level suffices).
+- **Person-misfit, correctly specified, carries almost no usable signal.** Once
+  the response function matches the scoring model (fixed guessing at chance),
+  infit is well-calibrated on every task (matrix included) and the
+  ability-extremity confound disappears — but per-task reliability is ≈ 0, and
+  the small surviving aggregate signal is still mostly inverse ability (r ≈ −0.52).
+  It is not a usable individual-difference index here. (The earlier impression of
+  reliable, age-declining misfit was an artifact of a mis-specified IRF — see §4.1.)
 - **Growth-deviation is salvageable on some tasks.** Two-wave reliability is
   moderate where growth is fast and well-measured (H&F 0.77, math 0.59, vocab
   0.48) but poor elsewhere — usable in places, fragile overall.
@@ -336,15 +350,19 @@ construct.
 We keep the naive analyses above (we will always want those first-order views)
 and add the model-based versions here.
 
-**A note on guessing.** The current scoring models are **Rasch / 2PL — they
-carry no guessing (lower-asymptote) parameter** (the item bank stores only
-difficulty, plus discrimination for 39 2PL items). But the multiple-choice
-**chance** level *is* recorded per item (0.25 for the 4-AFC tasks, 0.5 for
-2-AFC, etc.). So we do **not** need to fit a new 3PL: we fold the known chance
-into the person-fit response function as a fixed lower asymptote,
-P = c + (1 − c)·IRF, using the existing parameters.
+**A note on guessing (corrected).** The fitted scoring models **do** incorporate
+guessing: every item carries a **fixed lower asymptote at its chance level**
+(g = chance, *not* estimated) inside the `mirt` model — confirmed by reading the
+model records directly (matrix g = 0.25, mental-rotation 0.5, math per-item
+0–0.5). `score_irt` passes the full `mod2values()` table — g rows included —
+into `mirt(pars = …)`, so the released θ̂ already account for guessing. This was
+not obvious because the curated `item_parameters` table exports only difficulty
+and discrimination and **silently omits g** — a documentation gap worth flagging
+to the DCC, since anyone reconstructing the IRF from that table (as we first did)
+will get it wrong. The person-fit in §1 already uses the matching response
+function, P = c + (1 − c)·IRF; the check below shows why that is essential.
 
-## 4.1 Guessing-aware person-fit
+## 4.1 Why the person-fit response function must match the scoring model
 
 ```{r upg-misfit, cache=TRUE}
 upg_mf <- map_dfr(core$task_id, function(tid){
@@ -371,19 +389,22 @@ upg_mf <- map_dfr(core$task_id, function(tid){
          `guess-aware reliability` = 2*r/(1+r))
 })
 upg_mf |> mutate(across(where(is.numeric), \(x) round(x, 2))) |>
-  knitr::kable(caption = "Guessing-aware vs naive person-fit: calibration, ability confound, reliability")
+  knitr::kable(caption = "Plain-logistic (wrong) vs scoring-matched person-fit: calibration, ability link, reliability")
 ```
 
-Folding in the chance level **fixes the calibration** everywhere — every infit
-mean lands near 1 (matrix drops from 4.2 to 0.9, now usable) — and **removes
-most of the ability confound** (matrix −0.66 → −0.05). But the split-half
-**reliability of the de-confounded misfit collapses to ≈ 0** (the split-half
-correlations scatter around zero). The implication is decisive: the naive
-infit's apparent reliability was *itself* the ability/guessing confound. Once we
-score "surprise" properly, there is **almost no stable individual-difference
-signal** in person-fit at these item counts. Person-fit is not a usable
-variability trait here — not because it is noisy, but because, de-confounded,
-there is little real between-child variance to measure.
+The comparison is a cautionary tale. The **scoring-matched** IRF (the one used
+in §1, with the fixed guessing asymptote) is well-calibrated — every infit mean
+near 1, matrix included. If instead you forget the fixed guessing and use a
+plain logistic — the "naive" column — infit **inflates badly** (matrix 4.2) and
+acquires a strong, spurious ability correlation, *and* a misleadingly high
+split-half "reliability" on the inflated tasks: the systematic guessing misfit
+is shared across both split-halves (lucky guesses cluster at low ability), so it
+looks like reliable between-child variance when it is really model
+mis-specification. Score "surprise" with the **same** response function the
+scores were fit under, and that apparent signal collapses — the scoring-matched
+misfit has ≈ 0 reliability. The lesson: person-fit is only meaningful against the
+exact IRF used to estimate θ̂. Done correctly, there is little real between-child
+variance in person-fit to measure here.
 
 ## 4.2 Model-based growth (shrunken random slopes)
 
@@ -452,10 +473,11 @@ write_rds(list(misfit = upg_mf, growth = upg_growth,
 The model-based pass sharpens, and in one place corrects, the naive picture —
 and the verdict is a **robust null** on a general within-child variability trait:
 
-- **Guessing-aware person-fit** (recorded chance as a fixed asymptote, no new
-  3PL): fixes calibration and the matrix breakdown and strips out the ability
-  confound — but reveals the reliable misfit signal *was* that confound.
-  De-confounded person-fit has ≈ 0 reliability; it is not a usable trait here.
+- **Person-fit** (scored against the model's actual IRF — the fixed guessing
+  asymptote the scoring already uses, *not* a new 3PL): well-calibrated on every
+  task and free of the extremity confound, but ≈ 0 reliability — there is little
+  real between-child variance to measure. The earlier "reliable, age-declining"
+  misfit was an artifact of using the wrong (plain-logistic) response function.
 - **Model-based growth**: two waves cannot identify individual growth
   differences (slope reliability ≈ 0; models near-singular). The naive
   reliabilities were optimistic. Revisit at ≥ 3 waves.
