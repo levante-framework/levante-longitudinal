@@ -18,6 +18,7 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `03_sem_growth.qmd` | Construct-level latent growth (Leipzig 3-factor, Bogotá Language) **plus** cross-sectional structure: g vs 3-factor vs bifactor, per-site CFAs, Germany+Canada multigroup, SEM path plots. |
 | `04_construct_structure.qmd` | Construct structure with the **full 13-measure set** — ROAR (reading) and MEFS (EF) treated as real measures, not validators. ESEM first (~2 factors: fluid + verbal/literacy; MEFS→fluid, ROAR→verbal), then age-differentiation (local SEM) under **both** the theory (reasoning/EF/language/reading) and emergent (fluid/verbal) structures, plus a shared-speed/method check. |
 | `05_battery_design.qmd` | **Battery-length optimization.** Combines the calibrated factor structure, per-task marginal reliabilities, and per-task durations (newest/adaptive versions) to find how well shorter task subsets recover factor scores (factor-score determinacy, Monte-Carlo validated). Enumerates the full minutes-vs-recovery frontier; defines Full / Minor / Minimal / broad-screen versions. |
+| `06_within_child_variability.qmd` | **Within-child variability (exploratory).** Extracts three naive per-child indices — RT intra-individual variability (SD log-RT), person-misfit (IRT infit), 2-wave growth deviation — assesses their reliability, then asks whether they cohere across tasks/indices and change with age. |
 
 `tasks/` holds per-task trial-level deep dives; `reports/` holds DCC-facing
 write-ups; `old/` holds retired exploratory notebooks. Data and rendered HTML
@@ -46,6 +47,15 @@ are git-ignored.
   from each other* (every language/reading pair falls ~0.9→0.7 across ages 7–11;
   broad fluid–verbal 0.93→0.83). Reading relates to *g* about as much as to
   language → differential validity is weak at these ages.
+- **Within-child variability indices don't cohere — yet** (`06_within_child_variability.qmd`):
+  three naive consistency indices (RT intra-individual variability, IRT person-misfit
+  infit, 2-wave growth deviation) show **near-zero cross-task generality** (r≈0.05)
+  and are **mutually uncorrelated** (|r|<0.1) → no general "variability trait" with
+  naive estimators. RT-IIV is cleanly measured (rel ≈0.45–0.85) and *not* an ability
+  proxy but is task-specific and flat with age; person-misfit is **largely inverse
+  ability** (r≈−0.61) and broken on poorly-targeted CAT (matrix); 2-wave growth
+  deviation is reliable only for fast-growing tasks (H&F .77, math .59). Motivates a
+  model-based second pass (guessing-aware person-fit, error-propagating random slopes).
 - **The battery is highly compressible** (`05_battery_design.qmd`): because the
   constructs are so intercorrelated, factor scores can be recovered from far
   fewer tasks. Cutting administration time roughly in half (59 → ~31 min, 8
