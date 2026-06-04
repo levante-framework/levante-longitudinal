@@ -17,6 +17,7 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `02_growth.qmd` | Per-task longitudinal growth (LMMs) for Leipzig / Bogotá; within-child vs cross-sectional slopes. |
 | `03_sem_growth.qmd` | Construct-level latent growth (Leipzig 3-factor, Bogotá Language) **plus** cross-sectional structure: g vs 3-factor vs bifactor, per-site CFAs, Germany+Canada multigroup, SEM path plots. |
 | `04_construct_structure.qmd` | Construct structure with the **full 13-measure set** — ROAR (reading) and MEFS (EF) treated as real measures, not validators. ESEM first (~2 factors: fluid + verbal/literacy; MEFS→fluid, ROAR→verbal), then age-differentiation (local SEM) under **both** the theory (reasoning/EF/language/reading) and emergent (fluid/verbal) structures, plus a shared-speed/method check. |
+| `05_battery_design.qmd` | **Battery-length optimization.** Combines the calibrated factor structure, per-task marginal reliabilities, and per-task durations (newest/adaptive versions) to find how well shorter task subsets recover factor scores (factor-score determinacy, Monte-Carlo validated). Enumerates the full minutes-vs-recovery frontier; defines Full / Minor / Minimal / broad-screen versions. |
 
 `tasks/` holds per-task trial-level deep dives; `reports/` holds DCC-facing
 write-ups; `old/` holds retired exploratory notebooks. Data and rendered HTML
@@ -45,6 +46,13 @@ are git-ignored.
   from each other* (every language/reading pair falls ~0.9→0.7 across ages 7–11;
   broad fluid–verbal 0.93→0.83). Reading relates to *g* about as much as to
   language → differential validity is weak at these ages.
+- **The battery is highly compressible** (`05_battery_design.qmd`): because the
+  constructs are so intercorrelated, factor scores can be recovered from far
+  fewer tasks. Cutting administration time roughly in half (59 → ~31 min, 8
+  tasks) still recovers every construct at ≈ 0.91–0.95 determinacy; dropping just
+  ToM + Same&Different (→ ~44 min) costs almost nothing. **Reading is the binding
+  constraint** (protect ROAR-Word when trimming); a ~16-min 4-task screener
+  recovers the broad fluid/verbal split at ≈ 0.90.
 - **Cross-language DIF** (`tasks/crosslang_dif_batch.qmd`, + ToM & TROG): the
   multigroup_site tasks are broadly invariant (Shape Rotation cleanest; Math &
   H&F lower but item-specific). One broken item found (TROG German
