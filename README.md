@@ -34,6 +34,11 @@ are git-ignored.
 - **Stories/ToM** is a reliable but heterogeneous composite (not unidimensional);
   question type organizes it more than story construct; controls drive most
   cross-language non-invariance; partial scalar invariance achievable on targets.
+- **Cross-language DIF** (`tasks/crosslang_dif_batch.qmd`, + ToM & TROG): the
+  multigroup_site tasks are broadly invariant (Shape Rotation cleanest; Math &
+  H&F lower but item-specific). One broken item found (TROG German
+  `embedding_cat_cow_chase_black`, ~6.5 logits); top Math flags are
+  multiplication/subtraction — likely curriculum-timing, not translation.
 
 ## Remaining known data issues (v1.2)
 
