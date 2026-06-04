@@ -213,7 +213,10 @@ rotation 0.40) but **unreliable for the rest** (memory & Same-&-Different low;
 TROG & ToM negative) — wherever true between-child slope variance is small
 relative to the θ̂ measurement error carried by a two-point difference. So it is
 usable on a few tasks but fragile overall; more waves and error-aware shrinkage
-would stabilise it.
+would stabilise it. (But §4.2 shows even this is optimistic: it credits the EAP
+posterior SE as the *only* source of error — a proper random-slope model that
+lets occasion variance compete finds individual growth differences are not yet
+identifiable from two waves.)
 
 ```{r child-level}
 child <- zi |> group_by(user_id) |>
@@ -288,7 +291,7 @@ ability rises with age, the age trend in misfit may largely reflect children
 making fewer lucky guesses as they master more items — not an independent gain
 in response consistency.
 
-# Synthesis
+# Synthesis — naive (first-order) indices
 
 ```{r save}
 write_rds(list(rel = rel_tab, growth_rel = grel, child = child, cor = cmat, age_slopes = slopes),
@@ -310,8 +313,8 @@ A first, honest pass — and the headline is a **null on coherence**:
   reliable on only some tasks, **broken on poorly-targeted adaptive tasks**
   (matrix), and **heavily confounded with ability** (r ≈ −0.61); its age decline
   probably just tracks fewer lucky guesses as ability rises. It needs
-  **model-based person fit (lz / guessing-aware 3PL)** before it can be trusted
-  as anything other than ability.
+  **guessing-aware person fit** before it can be trusted as anything other than
+  ability (done in §4.1 — no new 3PL required, the recorded chance level suffices).
 - **Growth-deviation is salvageable on some tasks.** Two-wave reliability is
   moderate where growth is fast and well-measured (H&F 0.77, math 0.59, vocab
   0.48) but poor elsewhere — usable in places, fragile overall.
@@ -327,3 +330,142 @@ infit with a guessing-aware person-fit statistic from the scoring model;
 person×task variance-components model rather than per-run SDs; then re-ask
 whether — disattenuated — the indices cohere into a within-child variability
 construct.
+
+# 4. Model-based upgrades
+
+We keep the naive analyses above (we will always want those first-order views)
+and add the model-based versions here.
+
+**A note on guessing.** The current scoring models are **Rasch / 2PL — they
+carry no guessing (lower-asymptote) parameter** (the item bank stores only
+difficulty, plus discrimination for 39 2PL items). But the multiple-choice
+**chance** level *is* recorded per item (0.25 for the 4-AFC tasks, 0.5 for
+2-AFC, etc.). So we do **not** need to fit a new 3PL: we fold the known chance
+into the person-fit response function as a fixed lower asymptote,
+P = c + (1 − c)·IRF, using the existing parameters.
+
+## 4.1 Guessing-aware person-fit
+
+```{r upg-misfit, cache=TRUE}
+upg_mf <- map_dfr(core$task_id, function(tid){
+  rn <- runs |> filter(task_id == tid)
+  tr <- load_levante_trials(task_ids = tid) |> filter(run_id %in% rn$run_id, !is.na(correct)) |>
+    left_join(rn |> select(run_id, theta, language), by = "run_id")
+  ipx <- ip |> filter(task_id == tid)
+  if (tid %in% bylang) tr <- tr |> inner_join(ipx |> transmute(language = subset, item_uid, b = difficulty, a = discrimination), by = c("item_uid","language"))
+  else tr <- tr |> inner_join(ipx |> transmute(item_uid, b = difficulty, a = discrimination) |> distinct(item_uid, .keep_all = TRUE), by = "item_uid")
+  tr <- tr |> mutate(c = ifelse(is.na(chance), 0, chance), irf = 1/(1+exp(-a*(theta-b))),
+                     Pn = pmin(pmax(irf, .001), .999), Pg = pmin(pmax(c + (1-c)*irf, .001), .999))
+  agg <- tr |> group_by(run_id) |> filter(n() >= 10) |>
+    summarise(naive = sum((correct-Pn)^2)/sum(Pn*(1-Pn)),
+              guess = sum((correct-Pg)^2)/sum(Pg*(1-Pg)), .groups = "drop") |>
+    left_join(rn |> select(run_id, theta), by = "run_id")
+  sh <- tr |> group_by(run_id) |> filter(n() >= 12) |> mutate(h = row_number() %% 2) |>
+    group_by(run_id, h) |> summarise(v = sum((correct-Pg)^2)/sum(Pg*(1-Pg)), .groups = "drop") |>
+    pivot_wider(names_from = h, values_from = v, names_prefix = "h")
+  r <- cor(sh$h0, sh$h1, use = "complete.obs")
+  tibble(short = core$short[core$task_id == tid],
+         `naive infit` = mean(agg$naive), `guess-aware infit` = mean(agg$guess),
+         `naive vs θ` = cor(agg$naive, agg$theta, use = "complete.obs"),
+         `guess-aware vs θ` = cor(agg$guess, agg$theta, use = "complete.obs"),
+         `guess-aware reliability` = 2*r/(1+r))
+})
+upg_mf |> mutate(across(where(is.numeric), \(x) round(x, 2))) |>
+  knitr::kable(caption = "Guessing-aware vs naive person-fit: calibration, ability confound, reliability")
+```
+
+Folding in the chance level **fixes the calibration** everywhere — every infit
+mean lands near 1 (matrix drops from 4.2 to 0.9, now usable) — and **removes
+most of the ability confound** (matrix −0.66 → −0.05). But the split-half
+**reliability of the de-confounded misfit collapses to ≈ 0** (the split-half
+correlations scatter around zero). The implication is decisive: the naive
+infit's apparent reliability was *itself* the ability/guessing confound. Once we
+score "surprise" properly, there is **almost no stable individual-difference
+signal** in person-fit at these item counts. Person-fit is not a usable
+variability trait here — not because it is noisy, but because, de-confounded,
+there is little real between-child variance to measure.
+
+## 4.2 Model-based growth (shrunken random slopes)
+
+```{r upg-growth, cache=TRUE}
+grl <- sc |> filter(dataset %in% sites4, task_id %in% core$task_id, !is.na(score)) |>
+  group_by(user_id, short) |> filter(n() >= 2) |> ungroup() |> mutate(age_c = age - 8)
+upg_growth <- map_dfr(sort(unique(grl$short)), function(s){
+  d <- grl |> filter(short == s)
+  m <- tryCatch(suppressMessages(suppressWarnings(
+    lme4::lmer(score ~ age_c + (age_c | user_id), data = d,
+               control = lme4::lmerControl(check.conv.singular = "ignore")))), error = function(e) NULL)
+  if (is.null(m)) return(tibble(short = s, slope_sd = NA, resid_sd = NA, slope_reliability = NA))
+  vc <- as.data.frame(lme4::VarCorr(m))
+  ss <- vc$sdcor[vc$grp == "user_id" & vc$var1 == "age_c" & is.na(vc$var2)]
+  rs <- vc$sdcor[vc$grp == "Residual"]
+  tibble(short = s, slope_sd = ss, resid_sd = rs, slope_reliability = ss^2/(ss^2 + rs^2))
+})
+upg_growth |> arrange(desc(slope_reliability)) |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "Random-slope LMM per task: reliable between-child slope variance is negligible")
+```
+
+With only two waves the random-slope models are **near-singular** and recover
+**negligible reliable between-child slope variance** (slope reliability ≈ 0–0.06).
+This *revises* the optimistic naive 2-wave reliabilities above: those credited
+the EAP posterior SE as the only error term, but a model that lets
+occasion-to-occasion variance compete finds individual growth differences are
+**not yet identifiable** from two points. Growth-based variability needs **≥ 3
+waves** before it can be estimated per child.
+
+## 4.3 RT-IIV as a variance-components model
+
+Rather than a per-run SD, we model log RT-variability across all
+person×task runs and ask what share is a **stable cross-task person property**.
+
+```{r upg-iiv, cache=TRUE}
+iiv_run <- map_dfr(setdiff(core$task_id, "memory-game"), function(tid){
+  rn <- runs |> filter(task_id == tid)
+  load_levante_trials(task_ids = tid) |>
+    filter(run_id %in% rn$run_id, !is.na(rt_numeric), rt_numeric > 200, rt_numeric < 30000, correct == 1) |>
+    group_by(run_id, user_id, short) |> filter(n() >= 10) |>
+    summarise(logvar = log(var(log(rt_numeric))), .groups = "drop")
+})
+vcm <- suppressMessages(lme4::lmer(logvar ~ 1 + (1 | user_id) + (1 | short), data = iiv_run))
+vc <- as.data.frame(lme4::VarCorr(vcm)); tot <- sum(vc$vcov)
+tibble(component = c("person (stable trait)","task","residual (person×task + noise)"),
+       variance_share = c(vc$vcov[vc$grp=="user_id"], vc$vcov[vc$grp=="short"], vc$vcov[vc$grp=="Residual"])/tot) |>
+  mutate(variance_share = round(variance_share, 3)) |>
+  knitr::kable(caption = glue::glue("Variance decomposition of RT-variability ({nrow(iiv_run)} runs, {n_distinct(iiv_run$user_id)} children)"))
+```
+
+Only **~4% of RT-variability is a stable cross-task person property**; the bulk
+is task differences (~58%) and within-person/residual (~38%, which still
+includes measurement noise, so 4% is if anything an upper-ish bound on the
+trait share). The near-zero cross-task correlation in the naive analysis was
+therefore **not merely attenuation** — RT variability genuinely is
+task-specific, not a general trait, at these ages.
+
+```{r upg-save}
+write_rds(list(misfit = upg_mf, growth = upg_growth,
+               iiv_var = as.data.frame(lme4::VarCorr(vcm))),
+          here::here("data/within_child_variability_06_upgrades.rds"))
+```
+
+## Synthesis — model-based upgrades
+
+The model-based pass sharpens, and in one place corrects, the naive picture —
+and the verdict is a **robust null** on a general within-child variability trait:
+
+- **Guessing-aware person-fit** (recorded chance as a fixed asymptote, no new
+  3PL): fixes calibration and the matrix breakdown and strips out the ability
+  confound — but reveals the reliable misfit signal *was* that confound.
+  De-confounded person-fit has ≈ 0 reliability; it is not a usable trait here.
+- **Model-based growth**: two waves cannot identify individual growth
+  differences (slope reliability ≈ 0; models near-singular). The naive
+  reliabilities were optimistic. Revisit at ≥ 3 waves.
+- **RT-IIV variance components**: a person×task model puts the stable-person
+  share at ~4% — overwhelmingly task-specific.
+
+**Implication for LEVANTE.** Measuring within-child variability *as a coherent
+individual-difference construct* will need richer designs, not better summaries
+of the current single-session scores: more longitudinal waves for growth, and
+within-task manipulations purpose-built to elicit and reliably capture
+variability (e.g., conditions that provoke lapses, speed–accuracy trade-offs).
+RT-IIV remains a clean, reliable **per-task** measure — it is simply not, on
+this evidence, a cross-task trait.
