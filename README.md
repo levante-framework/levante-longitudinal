@@ -71,7 +71,7 @@ children with ≥ 2 administrations (longitudinal signal).
 | Memory | memory-game | 1717 | 284 | **deep-dived** (`tasks/memory.qmd`) — grid OK, DROP likely obsolete |
 | Hearts & Flowers | hearts-and-flowers | 1685 | 280 | **deep-dived** (`tasks/hearts_and_flowers.qmd`) — 2PL > Rasch, start trials low-info |
 | Pattern Matching | matrix-reasoning | 1536 | 263 | **deep-dived** (`tasks/training_vs_development.qmd`) — no practice effect on corrected data |
-| Sentence Understanding | trog | 1465 | 229 | **deep-dived** (`tasks/training_vs_development.qmd`) — T2>T1 was the bug |
+| Sentence Understanding | trog | 1465 | 229 | **deep-dived** (`tasks/sentence_understanding.qmd` items/categories/DIF; `tasks/training_vs_development.qmd`) |
 | Shape Rotation | mental-rotation | 1482 | 247 | **deep-dived** (`tasks/shape_rotation.qmd`) — textbook angle effect |
 | ROAR-Sentence | sre | 1622 | 202 | **deep-dived** (`tasks/roar_literacy.qmd`) — speeded efficiency, age-valid |
 | ROAR-Phoneme | pa | 1554 | 69 | **deep-dived** (`tasks/roar_literacy.qmd`) — fsm<lsm difficulty, age-valid |
