@@ -16,7 +16,7 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `01_data_integrity.qmd` | Per-(site, task) audit + verdict table (`data/task_site_verdict.rds`). Adaptive/mode coverage, RTM, extreme scores, score SE. |
 | `02_growth.qmd` | Per-task longitudinal growth (LMMs) for Leipzig / Bogotá; within-child vs cross-sectional slopes. |
 | `03_sem_growth.qmd` | Construct-level latent growth (Leipzig 3-factor, Bogotá Language) **plus** cross-sectional structure: g vs 3-factor vs bifactor, per-site CFAs, Germany+Canada multigroup, SEM path plots. |
-| `04_construct_structure.qmd` | The g-loading question, four ways: age-differentiation (local SEM), ESEM (~2 factors: fluid + verbal), predictive differential validity (reading), and a shared-speed/method check. |
+| `04_construct_structure.qmd` | Construct structure with the **full 13-measure set** — ROAR (reading) and MEFS (EF) treated as real measures, not validators. ESEM first (~2 factors: fluid + verbal/literacy; MEFS→fluid, ROAR→verbal), then age-differentiation (local SEM) under **both** the theory (reasoning/EF/language/reading) and emergent (fluid/verbal) structures, plus a shared-speed/method check. |
 
 `tasks/` holds per-task trial-level deep dives; `reports/` holds DCC-facing
 write-ups; `old/` holds retired exploratory notebooks. Data and rendered HTML
@@ -35,13 +35,16 @@ are git-ignored.
 - **Stories/ToM** is a reliable but heterogeneous composite (not unidimensional);
   question type organizes it more than story construct; controls drive most
   cross-language non-invariance; partial scalar invariance achievable on targets.
-- **The g-loading is substantive, not artifactual** (`04_construct_structure.qmd`):
-  it's within-site (not a site-mean effect) and ~orthogonal to response speed
-  (not a method artifact). Empirically the battery is ~**two** correlated
-  factors (fluid: reasoning+EF+math; verbal: vocab/ToM/TROG; r≈0.69), not three —
-  reasoning & EF don't separate. The factors **differentiate with age**
-  (EF–Language r 0.92→0.66 from age 6→12). External reading relates to *g*, not
-  specifically to language → differential validity is weak at these ages.
+- **The g-loading is substantive, not artifactual** (`04_construct_structure.qmd`,
+  now with ROAR + MEFS as first-class measures): it's within-site (not a site-mean
+  effect) and ~orthogonal to response speed (not a method artifact). Empirically
+  the 13-measure battery is ~**two** correlated factors (fluid/nonverbal incl.
+  **MEFS**; verbal/literacy incl. **ROAR reading**; r≈0.67), not three — there is
+  no separate EF factor, and reasoning & EF stay fused (r≈0.92, flat with age).
+  The verbal/reading domains **differentiate with age** from the fluid core *and
+  from each other* (every language/reading pair falls ~0.9→0.7 across ages 7–11;
+  broad fluid–verbal 0.93→0.83). Reading relates to *g* about as much as to
+  language → differential validity is weak at these ages.
 - **Cross-language DIF** (`tasks/crosslang_dif_batch.qmd`, + ToM & TROG): the
   multigroup_site tasks are broadly invariant (Shape Rotation cleanest; Math &
   H&F lower but item-specific). One broken item found (TROG German
