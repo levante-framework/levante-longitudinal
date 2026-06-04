@@ -131,6 +131,42 @@ opposite direction from Memory, where Leipzig was higher), so there is no
 general "Leipzig is noisier" effect: each task's site-level offset reflects
 sample/age, not measurement noise.
 
+# 4. Ceiling effect
+
+H&F scores pile up at a hard maximum. The question: is that just children who
+get **literally nothing wrong**?
+
+```{r ceiling}
+racc <- tr |> group_by(run_id) |>
+  summarise(acc = mean(correct, na.rm = TRUE), n_items = n(), .groups = "drop")
+hfc <- sc |> filter(task_id == "hearts-and-flowers", !is.na(score)) |>
+  select(run_id, dataset_label, score) |> inner_join(racc, by = "run_id")
+maxθ <- max(hfc$score, na.rm = TRUE)
+hfc |> mutate(at_ceiling = score >= maxθ - 0.05) |>
+  group_by(at_ceiling) |>
+  summarise(n = n(), median_accuracy = round(median(acc), 3),
+            min_accuracy = round(min(acc), 3),
+            pct_perfect = round(mean(acc == 1) * 100, 1), .groups = "drop") |>
+  knitr::kable(caption = glue::glue("Runs at the θ ceiling ({round(maxθ,2)}) all have perfect accuracy"))
+
+hfc |> group_by(dataset_label) |>
+  summarise(n = n(),
+            pct_perfect_accuracy = round(mean(acc == 1) * 100, 1),
+            pct_at_theta_ceiling = round(mean(score >= maxθ - 0.05) * 100, 1),
+            .groups = "drop") |>
+  arrange(desc(pct_perfect_accuracy)) |>
+  knitr::kable(caption = "Perfect-accuracy / ceiling rate by site")
+```
+
+**Yes — the ceiling is exactly the children who make no errors.** θ is capped at
+`r round(maxθ,2)`; every run there has 100% accuracy. About 10% of all runs are
+perfect-accuracy (they spread from θ ≈ 1 up to the cap depending on how many
+items they saw). The ceiling is **worst in Canada (~16% perfect), then Germany
+(~12%), least in Colombia (~6%)**. The task simply lacks items hard enough to
+separate the strongest children — even the hardest switch trials sit at
+difficulty ≈ +0.1, well below where these kids are. A harder condition (tighter
+time limit or more demanding switch trials) would extend the ceiling.
+
 # Verdict
 
 - The **start / stay / switch** structure is psychometrically real: switch
