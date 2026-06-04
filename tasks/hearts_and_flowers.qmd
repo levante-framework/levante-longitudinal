@@ -137,6 +137,7 @@ H&F scores pile up at a hard maximum. The question: is that just children who
 get **literally nothing wrong**?
 
 ```{r ceiling}
+sc <- read_rds(here::here("data/scores_all_sites.rds"))
 racc <- tr |> group_by(run_id) |>
   summarise(acc = mean(correct, na.rm = TRUE), n_items = n(), .groups = "drop")
 hfc <- sc |> filter(task_id == "hearts-and-flowers", !is.na(score)) |>
