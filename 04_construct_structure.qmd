@@ -1,0 +1,242 @@
+---
+title: "04 — Construct structure: g-loading, differentiation, and differential validity"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 5.5
+execute:
+  warning: false
+  message: false
+---
+
+# The question
+
+03 found the core tasks resolve into a **strong general factor** with only
+weakly-separable reasoning / EF / language domains (inter-factor r ≈ 0.85–0.96).
+That's good for a single ability score but raises a worry: **little differential
+validity** — the domains barely behave as distinct constructs. This notebook
+interrogates that from four angles:
+
+1. **Developmental differentiation** — do the factors separate with age (local
+   SEM)?
+2. **Empirical structure (ESEM)** — what factor solution do the data actually
+   prefer, with cross-loadings allowed?
+3. **Predictive differential validity** — does a domain factor predict a
+   matching external criterion (reading) over and above the others?
+4. **A shared-speed (method) artifact?** — does a general response-speed factor
+   account for the cross-task covariation?
+
+```{r setup}
+source(here::here("common.R"))
+library(lavaan); library(psych)
+sc <- read_rds(here("data/scores_all_sites.rds"))
+sites4 <- c("pilot_mpieva_de_main","pilot_uniandes_co_bogota",
+            "pilot_uniandes_co_rural","pilot_western_ca_main")
+
+fo <- sc |> filter(dataset %in% sites4, task_id %in% c(core_task_ids,"swr","sre","pa"),
+                   !is.na(score)) |>
+  group_by(user_id, short) |> arrange(age) |> slice(1) |> ungroup()
+age1 <- fo |> group_by(user_id) |> arrange(age) |> slice(1) |> ungroup() |> select(user_id, age, dataset)
+xw <- fo |> select(user_id, short, score) |> distinct(user_id, short, .keep_all = TRUE) |>
+  pivot_wider(names_from = short, values_from = score) |>
+  left_join(age1, by = "user_id")
+
+meas <- "reasoning =~ matrix + mrot + math
+         ef =~ hf + mg + sds
+         language =~ trog + vocab + tom"
+fcor <- function(fit){ c <- lavInspect(fit,"cor.lv")
+  c(`R–EF`=c["reasoning","ef"], `R–Lang`=c["reasoning","language"], `EF–Lang`=c["ef","language"]) }
+```
+
+Pooled cross-sectional sample (first observation per child, four data-rich
+sites): **N = `r nrow(xw)`**.
+
+# 1. Developmental differentiation (local SEM)
+
+We fit the 3-factor model at a sliding series of focal ages, weighting children
+by a Gaussian kernel on age (bandwidth 1.5 yr), and read off the inter-factor
+correlations as a smooth function of age. If abilities differentiate with
+development, the correlations should fall with age.
+
+```{r losem, cache=TRUE}
+h <- 1.5
+losem <- map_dfr(seq(6, 12, by = 0.5), function(a0) {
+  w <- dnorm((xw$age - a0) / h)
+  fit <- tryCatch(cfa(meas, cbind(xw, .w = w), std.lv = TRUE, missing = "fiml",
+                      sampling.weights = ".w"), error = function(e) NULL)
+  if (is.null(fit) || !lavInspect(fit, "converged")) return(NULL)
+  bind_cols(focal_age = a0, eff_n = round(sum(w)), as_tibble_row(fcor(fit)))
+})
+losem |> pivot_longer(c(`R–EF`,`R–Lang`,`EF–Lang`), names_to="pair", values_to="r") |>
+  ggplot(aes(focal_age, r, color = pair)) +
+  geom_line(linewidth = 1) + geom_point(size = 2) +
+  scale_color_brewer(palette = "Set1", name = NULL) +
+  scale_x_continuous(breaks = 6:12) + ylim(0.5, 1) +
+  labs(x = "Focal age (years)", y = "Inter-factor correlation",
+       title = "Abilities differentiate with age",
+       subtitle = "Kernel-weighted (local) SEM, bandwidth 1.5 yr")
+```
+
+```{r losem-tab}
+losem |> filter(focal_age %in% c(6,8,10,12)) |>
+  mutate(across(c(`R–EF`,`R–Lang`,`EF–Lang`), \(x) round(x,2))) |>
+  knitr::kable(caption = "Inter-factor correlations by focal age")
+```
+
+**Reasoning and EF stay fused (r ≈ 0.95→0.92) across the whole range, but
+Language pulls away** — Reasoning–Language drops from ~0.95 to ~0.77 and
+EF–Language from ~0.92 to ~0.66 between ages 6 and 12. This is the classic
+*age-differentiation* pattern: the g-dominance is strongest in the youngest
+children and partly dissolves as the verbal/language domain separates. So the
+limited differential validity is, in part, **real developmental structure** —
+not only a measurement artifact.
+
+# 2. What structure do the data prefer? (ESEM)
+
+Exploratory factor analysis on the FIML correlation matrix (handles the
+partial-battery missingness), allowing items to cross-load.
+
+```{r esem, cache=TRUE}
+items9 <- xw |> select(matrix,mrot,math,hf,mg,sds,trog,vocab,tom)
+R <- lavCor(items9, missing = "fiml"); N <- nrow(items9)
+fit_tab <- map_dfr(1:4, function(nf){
+  f <- suppressWarnings(fa(R, nfactors = nf, n.obs = N, fm = "ml", rotate = "oblimin"))
+  tibble(factors = nf, RMSEA = f$RMSEA[1], TLI = f$TLI, BIC = f$BIC)
+})
+knitr::kable(fit_tab, digits = 3, caption = "EFA fit by number of factors (FIML correlation)")
+```
+
+```{r esem-loadings}
+f3 <- suppressWarnings(fa(R, nfactors = 3, n.obs = N, fm = "ml", rotate = "oblimin"))
+load3 <- unclass(f3$loadings); colnames(load3) <- paste0("F", 1:3)
+as.data.frame(round(load3, 2)) |> rownames_to_column("task") |>
+  knitr::kable(caption = "3-factor ESEM loadings (oblimin)")
+round(f3$Phi, 2) |> knitr::kable(caption = "ESEM factor correlations")
+```
+
+The exploratory solution **does not recover reasoning vs. EF as separate
+factors**. Instead:
+
+- **F1 — a broad fluid/quantitative factor** loading matrix, mrot, math, mg,
+  sds (≈ 0.66–0.83): reasoning *and* EF *and* math collapse together.
+- **F2 — a language/verbal factor**: vocab (0.92), tom, trog.
+- **F3** is weak and anchored by Hearts & Flowers (low-communality, the
+  warm-up-heavy task).
+
+F1 and F2 correlate ≈ 0.69. So empirically the battery is closer to **two
+correlated factors — fluid-cognitive and verbal — than to the intended three**.
+(BIC keeps improving past 3 factors, but the extra factors are small and
+task-specific rather than substantive.) This matches §1: language is the one
+domain that genuinely separates.
+
+# 3. Predictive differential validity (reading criterion)
+
+If the domains have differential validity, the **language** factor should
+predict an external **reading** measure (ROAR word/sentence/phoneme) over and
+above reasoning and EF. (MEFS, the EF criterion, is not in this data release, so
+we can only test the reading side.)
+
+```{r predval, cache=TRUE}
+mod <- paste(meas,
+  "reading =~ swr + sre + pa",
+  "reading ~ reasoning + ef + language", sep = "\n")
+fit_pv <- sem(mod, xw, std.lv = TRUE, missing = "fiml")
+lavInspect(fit_pv, "cor.lv")["reading", c("reasoning","ef","language")] |> round(3) |>
+  enframe("factor","cor_with_reading") |>
+  knitr::kable(caption = "Latent correlation of each cognitive factor with the reading factor")
+standardizedSolution(fit_pv) |> filter(lhs == "reading", op == "~") |>
+  select(predictor = rhs, est.std, se, pvalue) |>
+  knitr::kable(digits = 3, caption = "reading ~ reasoning + ef + language (note collinearity)")
+```
+
+**Reading correlates about equally with all three cognitive factors**
+(reasoning 0.87, EF 0.81, language 0.85) — it is **not** preferentially related
+to language. Reading is predicted by the *general* factor, not by a specific
+language domain. (The regression coefficients are unstable from collinearity —
+reasoning takes a large but high-SE coefficient — so the latent correlations are
+the trustworthy read.) So even against an external criterion, **differential
+validity is weak**: the cognitive factors relate to reading through g.
+
+# 4. Is the g-loading a shared-speed (method) artifact?
+
+All tasks share a format (4-AFC, tablet, one session). A general
+response-speed/decision factor could inflate cross-task ability covariation. We
+build a general-speed factor from per-person median (log) reaction times across
+the 8 timed core tasks (Memory has no RT), standardized within task, and ask
+whether it explains the cognitive g.
+
+```{r rt, cache=TRUE}
+rttasks <- setdiff(core_task_ids, "memory-game")
+fr_runs <- sc |> filter(dataset %in% sites4, task_id %in% rttasks) |>
+  group_by(user_id, task_id) |> arrange(age) |> slice(1) |> ungroup() |> pull(run_id)
+trrt <- load_levante_trials(task_ids = rttasks) |>
+  filter(run_id %in% fr_runs, !is.na(rt_numeric), rt_numeric > 200, rt_numeric < 30000) |>
+  group_by(run_id, user_id, short) |>
+  summarise(lrt = median(log(rt_numeric)), .groups = "drop")
+rtwide <- trrt |> group_by(short) |> mutate(z = as.numeric(scale(lrt))) |> ungroup() |>
+  select(user_id, short, z) |> distinct(user_id, short, .keep_all = TRUE) |>
+  pivot_wider(names_from = short, values_from = z)
+rtm <- rtwide |> select(-user_id) |> as.matrix()
+cm <- cor(rtm, use = "pairwise")
+mean_rt_r <- mean(cm[upper.tri(cm)], na.rm = TRUE)
+
+gfit <- cfa("g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom", xw, std.lv=TRUE, missing="fiml")
+gsc <- tibble(user_id = xw$user_id, g = as.numeric(lavPredict(gfit)[, "g"]))
+spd <- rtwide |> mutate(speed = rowMeans(across(-user_id), na.rm = TRUE)) |> select(user_id, speed)
+sg <- gsc |> inner_join(spd, by = "user_id")
+tibble(metric = c("mean cross-task RT correlation (general speed exists?)",
+                  "cor(cognitive g, general slowness)"),
+       value = c(round(mean_rt_r, 3), round(cor(sg$g, sg$speed, use="complete.obs"), 3))) |>
+  knitr::kable(caption = "Speed factor and its relation to cognitive g")
+```
+
+A general speed factor *does* exist — reaction times correlate ≈ 0.34 across
+tasks. But it is **nearly orthogonal to cognitive ability** (r(g, slowness) ≈
+0.15, and *positive* — if anything, slower, more deliberate children score
+slightly higher, consistent with rushing→errors elsewhere). So the cross-task
+covariation in *ability* is **not** a shared-speed/method artifact; partialling
+speed out would not differentiate the ability factors. The g-loading is
+substantive, not procedural.
+
+# Synthesis
+
+Four angles converge on a coherent picture of the g-loading:
+
+| Hypothesis | Verdict |
+|---|---|
+| Between-site mean differences inflate it (03 probe) | **No** — it's within-site |
+| Shared response-speed / method factor | **No** — speed ≈ orthogonal to g (r 0.15) |
+| Purely a measurement defect | **Partly not** — it's developmentally real |
+| Reasoning/EF/Language are separable | **Only Language** separates (ESEM: 2 factors) |
+| Domains have differential (criterion) validity | **Weak** — reading relates to g, not specifically language |
+
+So the battery, at these ages, measures a **strong general ability plus a
+separable verbal/language dimension**, and that verbal dimension **differentiates
+from the fluid core as children get older**. The limited differential validity
+is therefore partly a true developmental fact (young children's abilities are
+less differentiated), not just an artifact — though it does mean that, for now,
+a single g-score plus a language score captures most of what the battery
+measures.
+
+**Implications / next steps:**
+
+- Report and model **age-moderated structure** (the differentiation curve) as a
+  substantive result rather than treating high factor correlations as a flaw.
+- For differential-validity claims, focus on the **older** end of the range and
+  on the **fluid-vs-verbal** split (the one the data support), not a three-way
+  reasoning/EF/language split.
+- Bring in **MEFS** (when available) and other external criteria to test the EF
+  side of differential validity — the reading side already shows g, not domain,
+  prediction.
+- A longitudinal second-order model (does *g* grow; does the structure
+  differentiate within child over time?) is the natural follow-up as waves
+  accrue.
+
+```{r save}
+write_rds(list(losem = losem, esem = f3, fit_pv = fit_pv,
+               rt = list(mean_r = mean_rt_r, g_speed = cor(sg$g, sg$speed, use="complete.obs"))),
+          here::here("data/construct_structure_04.rds"))
+```
