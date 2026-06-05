@@ -1,6 +1,6 @@
 ---
 title: "LEVANTE longitudinal analyses — what we found"
-subtitle: "A tour of the 00–08 notebook stack, task deep-dives, and DCC handoffs"
+subtitle: "Psychometric findings across the 00–08 notebooks and task deep-dives"
 date: "2026-06-05"
 format:
   revealjs:
@@ -14,26 +14,16 @@ format:
 ## The project & data
 
 - Exploratory **longitudinal** analyses of LEVANTE core tasks — reproducible Quarto notebooks, shared `common.R`.
-- Unified **`levante_data_latest`** (Redivis) via `rlevante`; now on **v1.2**, the bug-fixed release.
+- Unified **`levante_data_latest`** (Redivis) via `rlevante`; now on **v1.2**, the corrected release.
 - Four data-rich pilot sites: **Leipzig (DE)**, **Bogotá urban + rural (CO)**, **Western (CA)**.
 - Cleaning: adaptive-flag backfill, ROAR-Word engagement filter.
-- Stack: **00** load → **01** integrity → **02** growth → **03** SEM → **04** structure → **05** battery → **06–08** within-child variability; plus `tasks/` deep-dives and `reports/`.
+- Stack: **00** load → **01** integrity → **02** growth → **03** SEM → **04** structure → **05** battery → **06–08** within-child variability; plus `tasks/` trial-level deep-dives.
 
-## Headline: a scoring bug, found and fixed
+## One methodological prerequisite: a scoring fix {.smaller}
 
-- Found a **column-order bug** in `rlevante::score_irt` — trial items were *not* reordered to the model's item order before `mirt::fscores()`.
-- Worst for **CAT / guessing-floor** items; mis-scored the v1.0 release.
-- **Validated** the fix (r = 1.00 vs gold scores; buggy versions 0.59–0.87), fixed upstream → re-released as **v1.2**.
-- Write-up: `reports/rlevante_handoff.md`.
-
-## The bug explained most "interesting" dynamics {.smaller}
-
-On corrected v1.2, the eye-catching v1.0 phenomena largely **dissolve**:
-
-- Apparent **longitudinal declines** → gone; growth uniformly positive (math steepest, ≈ 0.6 θ/yr).
-- Bogotá math **"regression to the mean"** → a CAT-routing artifact, not within-child change.
-- Leipzig **"mode shifts"** (math +2.37 → +0.30) → ≈ 85% the bug; residual < 0.75 logits (mild ceiling + EAP shrinkage).
-- Pattern-Matching / Sentence-Understanding **"training effect" (T2 > T1)** → did **not** replicate.
+- We found and fixed a **column-order bug** in `rlevante::score_irt` (items not reordered to the model's order before `mirt::fscores()`), worst for **CAT / guessing-floor** items.
+- Validated (r = 1.00 vs gold scores; buggy 0.59–0.87) and corrected upstream → all analyses here use the bug-fixed **v1.2** release.
+- *Everything that follows is on v1.2; we set the bug aside and focus on the psychometrics.*
 
 ## Construct structure: a strong general factor {.smaller}
 
@@ -43,6 +33,19 @@ On corrected v1.2, the eye-catching v1.0 phenomena largely **dissolve**:
 - The three theory factors are **near-collinear** (reasoning–EF r ≈ 0.96).
 - **Bifactor degenerate** — specific factors beyond *g* are negligible.
 - Structure **replicates** across Germany, Bogotá, and Canada (per-site CFAs; DE + CA multigroup supports configural/metric invariance).
+
+## The structural models {.smaller}
+
+:::: {.columns}
+::: {.column width="50%"}
+![Single general factor](figures/sem_g.png)
+:::
+::: {.column width="50%"}
+![Three theory factors — but inter-factor r ≈ 0.85–0.96](figures/sem_3factor.png)
+:::
+::::
+
+The 3-factor model fits slightly better than *g*, but the factors are so highly correlated that it is effectively **one general factor with weakly-separable domains**.
 
 ## …resolving into ~two correlated dimensions {.smaller}
 
@@ -133,17 +136,17 @@ On corrected v1.2, the eye-catching v1.0 phenomena largely **dissolve**:
 :::
 ::::
 
-## Task deep-dives (1/3): the "artifacts" were the bug {.smaller}
+## Task deep-dives (1/3): adaptive testing & engagement {.smaller}
 
-- **Math:** Bogotá "regression to the mean" = CAT routing, not within-child change; item bank unbalanced by sub-domain.
-- **ROAR-Word:** super-low scores = **floor / non-engagement** (rushers, near-chance), not truncated runs → cleaning filter (acc < 0.4 or median RT < 500 ms).
-- **Vocab:** German "decline" = the CAT serving very easy items (the bug), plus a genuine CO floor.
+- **Math:** Bogotá "regression to the mean" is a **CAT-routing artifact** (item selection shifts across waves), not within-child change; item bank unbalanced by sub-domain.
+- **ROAR-Word:** super-low scores = **floor / non-engagement** (rushers, near-chance responders), not truncated runs → cleaning filter (acc < 0.4 or median RT < 500 ms).
+- **Vocab:** apparent "decline" reflects **CAT item-exposure / floor**, not ability loss.
 
 ## Task deep-dives (2/3): measurement checks {.smaller}
 
-- **Memory:** grid size (2×2 vs 3×3) **is** already modeled separately; difficulty cleanly ordered by span; replicates across sites → the "DROP" flag is **likely obsolete** (was the bug).
-- **Hearts & Flowers:** **2PL > Rasch**; start trials are low-information.
-- **Pattern Matching / Sentence Understanding:** the release-notes "T2 > T1 training effect" did **not** replicate on corrected data.
+- **Memory:** grid size (2×2 vs 3×3) **is** already modeled separately; difficulty cleanly ordered by span; replicates across sites → the "DROP" flag is **likely obsolete**.
+- **Hearts & Flowers:** **2PL fits better than Rasch**; start trials are low-information.
+- **Pattern Matching / Sentence Understanding:** **no reliable practice/retest effect** — the one clean longitudinal cell (Leipzig PM, equal length) shows no gain.
 
 ## Task deep-dives (3/3): items & stimuli {.smaller}
 
@@ -160,18 +163,12 @@ On corrected v1.2, the eye-catching v1.0 phenomena largely **dissolve**:
 - Top Math flags = **multiplication / subtraction** → likely curriculum timing, not translation.
 - ToM / TROG: targeted items show DIF; achievable **partial** scalar invariance on the rest.
 
-## Data-quality status & handoffs {.smaller}
-
-- **Known issues** logged in `00`: adaptive-flag backfill; ROAR engagement; residual EAP shrinkage at CAT/non-CAT boundaries; Memory & SDS release-note caveats.
-- **rlevante handoff:** the `score_irt` bug (fixed) + documentation gaps — incl. the `item_parameters` table **omitting the guessing parameter** (a trap for anyone reconstructing the IRF).
-- **Same & Different:** deferred pending new scoring models.
-
 ## Synthesis / takeaways {.smaller}
 
-- **Fixing the scoring bug** was the highest-leverage result — most "findings" in v1.0 were artifacts.
-- The battery measures a **strong fluid + verbal/literacy structure** that **differentiates with age**, and is **compressible to ~half** its length.
-- **Within-child variability:** usable signal lives in **RT on speeded, high-trial tasks**; accuracy variability is essentially **ability**.
-- Structure & most measurement properties **replicate across sites**; a handful of specific items/flags remain for the DCC.
+- The battery measures a **strong general factor** resolving into **fluid + verbal/literacy** dimensions that **differentiate with age**.
+- It is **compressible to ~half** its length with little loss of factor-score recovery.
+- **Within-child variability:** usable signal lives in **RT on speeded, high-trial tasks** (declines with age); **accuracy** variability is essentially **ability** with nothing separable on top.
+- Structure & most measurement properties **replicate across sites**; specific item/stimulus flags remain (broken TROG item, Shape-Rotation polygons, ToM heterogeneity).
 
 ## Open threads / next steps {.smaller}
 
@@ -182,4 +179,4 @@ On corrected v1.2, the eye-catching v1.0 phenomena largely **dissolve**:
 
 ## {.center}
 
-*Sources: notebooks `00`–`08`, `tasks/*.qmd`, `reports/rlevante_handoff.md`. See `README.md` for the full index.*
+*Sources: notebooks `00`–`08` and `tasks/*.qmd`. See `README.md` for the full index.*
