@@ -213,20 +213,17 @@ trial-count–filtered analysis in §3.
 
 # 3. Do cross-task RT-IIV cohere?
 
-We build the child × task matrix of (detrended) RT-IIV, residualise on **site +
-age** (to strip administration-medium and developmental level differences), and
-examine the correlation matrix and factor structure — first across **all
+We build the child × task matrix of (detrended) RT-IIV — keeping site and age
+variance in (we examine those as effects of interest in §4, not removing them) —
+and examine the correlation matrix and factor structure, first across **all
 tasks**, then restricted to tasks that clear a reliability/trial-count bar.
 
 ```{r crosstask}
-# site/age adjustment at the IIV level
-iiv_adj <- iiv |> left_join(runs |> select(run_id, age), by = "run_id") |>
-  left_join(sc |> distinct(run_id, dataset), by = "run_id") |>
-  group_by(short) |> mutate(iiv_z = as.numeric(resid(lm(scale(iiv_detr) ~ dataset + age)))) |> ungroup()
+iiv_adj <- iiv |> group_by(short) |> mutate(iiv_z = as.numeric(scale(iiv_detr))) |> ungroup()
 wide <- iiv_adj |> select(user_id, short, iiv_z) |> distinct(user_id, short, .keep_all = TRUE) |>
   pivot_wider(names_from = short, values_from = iiv_z)
 cmat <- cor(wide |> select(-user_id), use = "pairwise")
-knitr::kable(round(cmat, 2), caption = "Cross-task correlations of purified RT-IIV (site/age-adjusted, all tasks)")
+knitr::kable(round(cmat, 2), caption = "Cross-task correlations of purified RT-IIV (within-task standardized, all tasks)")
 ```
 
 ```{r fa-all}
@@ -262,37 +259,99 @@ as.data.frame(round(Lf, 2)) |> rownames_to_column("task") |> arrange(desc(ML1)) 
 
 The picture is **weak, two-stranded coherence — not one general trait**:
 
-- Purification roughly doubles the cross-task correlation versus the naive per-run
-  SD (notebook 06's ≈ 0.05 → ≈ 0.10 detrended; **≈ 0.08 after also removing
-  between-site/age differences**, i.e. some of the apparent coherence was shared
-  site/administration variance). A single general RT-IIV factor still does **not**
-  fit (1-factor TLI ≈ 0.41).
-- The 2-factor solution splits into **two weak strands**: a **speeded-task
-  factor** (ROAR-Word .82, ROAR-Sentence .43, Hearts & Flowers .42 — where rapid
-  responding makes RT-IIV a clean attention/lapse signal) and a **weaker
-  untimed-cognitive factor** (TROG .57, vocab .43, math .37, matrix .33, mental
-  rotation .27 — RT driven by problem difficulty/strategy). They barely correlate
-  with each other, and ToM / Same-&-Different load on neither.
+- Purification roughly doubles the cross-task correlation versus the naive
+  per-run SD (notebook 06's ≈ 0.05 → ≈ 0.10). A single general RT-IIV factor still
+  does **not** fit (1-factor TLI ≈ 0.38).
+- The 2-factor solution shows a **clear speeded-task factor** (ROAR-Word .93,
+  ROAR-Sentence .55, Hearts & Flowers .54 — where rapid responding makes RT-IIV a
+  clean attention/lapse signal) and a **weaker untimed-cognitive strand** (matrix
+  .40, mental rotation .38, TROG .33, math .28 — RT driven by problem
+  difficulty/strategy). The second factor is partly inflated by the small-sample
+  Same-&-Different task (n ≈ 78), which drops out under the reliability filter.
 - Restricting to the **reliable, high-trial tasks** (matrix, vocab, H&F, ToM,
-  ROAR-Word, ROAR-Sentence) raises the mean correlation to ≈ 0.13 and yields a
+  ROAR-Word, ROAR-Sentence) raises the mean correlation to ≈ 0.17 and yields a
   passable single factor (1-factor TLI ≈ 0.84) **dominated by the speeded tasks**
-  (ROAR-Word .71, H&F .51, ROAR-Sentence .50) — consistent with the naive null
-  being partly attenuation from noisy, low-trial estimates, but with the durable
-  signal living in the speeded tasks.
+  (ROAR-Word .99, H&F .51, ROAR-Sentence .41, ToM .38), with the cognitive tasks
+  weak (matrix .18, vocab .10) — consistent with the naive null being partly
+  attenuation from noisy, low-trial estimates, the durable signal living in the
+  speeded tasks.
 
-# 4. Age trends of purified RT-IIV
+# 4. Site and age differences in RT-IIV
 
-```{r age, fig.height=4.3}
+Rather than scrubbing site and age out of the IIV, we examine them directly: do
+children respond more variably at some **sites** (administration medium, setting,
+population) or at younger **ages**?
+
+```{r site-age-prep}
 library(lme4)
-iiv_age <- iiv |> left_join(runs |> select(run_id, age), by = "run_id")
-slope <- fixef(lmer(iiv_detr ~ age + (1|short), data = iiv_age))["age"]
-iiv_age |> ggplot(aes(age, iiv_detr, color = short)) +
+iiv_sa <- iiv |> left_join(runs |> select(run_id, age), by = "run_id") |>
+  left_join(sc |> distinct(run_id, dataset), by = "run_id") |>
+  mutate(site = recode(dataset,
+           pilot_mpieva_de_main = "DE (Leipzig)", pilot_uniandes_co_bogota = "CO (Bogotá-urban)",
+           pilot_uniandes_co_rural = "CO (Bogotá-rural)", pilot_western_ca_main = "CA (Western)"),
+         iiv_z = ave(iiv_detr, short, FUN = \(x) as.numeric(scale(x))), age_c = age - 9)
+```
+
+## 4.1 Age
+
+```{r age-plot, fig.height=4.3}
+slope <- fixef(lmer(iiv_detr ~ age + (1|short), data = iiv_sa))["age"]
+iiv_sa |> ggplot(aes(age, iiv_detr, color = short)) +
   geom_smooth(method = "loess", se = FALSE, linewidth = 0.7) +
   scale_color_viridis_d(name = NULL) +
   labs(x = "Age (years)", y = "Purified RT-IIV (SD detrended log-RT)",
-       title = glue::glue("Purified RT-IIV vs age (pooled slope {round(slope,3)}/yr)"),
-       subtitle = "Modest overall decline — children become somewhat more consistent with age")
+       title = glue::glue("Purified RT-IIV vs age (pooled slope {round(slope,3)} log-RT-SD/yr)"),
+       subtitle = "Modest overall decline — concentrated in the speeded tasks")
 ```
+
+```{r age-slopes}
+iiv_sa |> group_by(short) |> summarise(age_slope = coef(lm(iiv_detr ~ age))[2], .groups = "drop") |>
+  arrange(age_slope) |> mutate(age_slope = round(age_slope, 4)) |>
+  knitr::kable(caption = "Per-task age slope of RT-IIV (negative = more consistent with age)")
+```
+
+RT-IIV declines with age overall, but the decline is **concentrated in the
+speeded tasks** — ROAR-Word (−0.051/yr), ROAR-Sentence (−0.029), Hearts & Flowers
+(−0.027) — exactly the tasks that carry the cross-task RT-IIV signal (§3), while
+the untimed cognitive tasks are essentially flat. Developmental gains in
+response consistency show up where RT-IIV is a clean measure.
+
+## 4.2 Site
+
+```{r site-means, fig.height=4.3}
+iiv_sa |> group_by(short, site) |> summarise(m = mean(iiv_z), se = sd(iiv_z)/sqrt(n()), .groups = "drop") |>
+  ggplot(aes(site, m, color = site)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey70") +
+  geom_pointrange(aes(ymin = m - se, ymax = m + se), size = 0.3) +
+  facet_wrap(~short, nrow = 2) + scale_color_brewer(palette = "Set1", guide = "none") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 6)) +
+  labs(x = NULL, y = "RT-IIV (within-task z)", title = "RT-IIV by site, per task",
+       subtitle = "Bogotá (urban & rural) consistently above Leipzig / Western")
+```
+
+```{r site-model}
+m_site <- lmer(iiv_z ~ dataset + age_c + (1|short), data = iiv_sa)
+vc <- as.data.frame(VarCorr(lmer(iiv_z ~ (1|short) + (1|dataset), data = iiv_sa)))
+co <- summary(m_site)$coefficients
+tibble(term = c("CO Bogotá-urban vs DE","CO Bogotá-rural vs DE","CA Western vs DE","age (per year)"),
+       estimate = co[c("datasetpilot_uniandes_co_bogota","datasetpilot_uniandes_co_rural",
+                       "datasetpilot_western_ca_main","age_c"), "Estimate"],
+       t = co[c("datasetpilot_uniandes_co_bogota","datasetpilot_uniandes_co_rural",
+                "datasetpilot_western_ca_main","age_c"), "t value"]) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = glue::glue(
+    "Site & age effects on RT-IIV (z), age-adjusted; site explains {round(vc$vcov[vc$grp=='dataset']/sum(vc$vcov)*100,1)}% of total IIV variance"))
+```
+
+There are clear **group-level site differences**: children in Bogotá — both
+urban (+0.28 SD) and rural (+0.33 SD) — are substantially **more RT-variable**
+than Leipzig even after age adjustment, while Western ≈ Leipzig. These are large,
+consistent mean shifts, though site accounts for only ~4% of *total* RT-IIV
+variance (individual differences dominate). The cause is not identifiable here —
+it could be administration medium (devices, supervision, setting), population, or
+language — but it is a clear caution against treating RT-IIV as directly
+comparable across sites without accounting for it, and a flag for the
+measurement-invariance of variability indices.
 
 # Synthesis
 
@@ -304,9 +363,9 @@ write_rds(list(summary = summ, cor_all = cmat, cor_reliable = cmatf,
 
 - **Purification helps, modestly.** Detrending the within-task time-course and
   accounting for autocorrelation roughly doubles cross-task RT-IIV coherence
-  versus the naive per-run SD (≈ 0.05 → ≈ 0.10), falling to ≈ 0.08 once
-  between-site/age differences are also removed. An age-varying trend does not
-  matter (r ≈ 1); the trial-set choice has a modest per-task effect (r ≈ 0.74–0.98).
+  versus the naive per-run SD (≈ 0.05 → ≈ 0.10 across all tasks, ≈ 0.17 in the
+  reliable subset). An age-varying trend does not matter (r ≈ 1); the trial-set
+  choice has a modest per-task effect (r ≈ 0.74–0.98).
 - **Trial count is decisive for stability.** RT-IIV reliability runs from ≈ 0.5
   (≤ ~25 trials) to ≈ 0.94 (120 trials). Short tasks cannot deliver a dependable
   per-child RT-IIV; designs that want this measure should ensure enough trials.
@@ -316,6 +375,13 @@ write_rds(list(summary = summ, cor_all = cmat, cor_reliable = cmatf,
   rather than a single general trait. Filtering to reliable, high-trial tasks
   leaves a passable single factor **dominated by the speeded tasks** (a plausible
   attentional-consistency signal).
+- **Site and age differences are real.** RT-IIV declines with age (≈ −0.06 z/yr),
+  the decline concentrated in the same speeded tasks that carry the signal. And
+  children in **Bogotá are markedly more RT-variable** than Leipzig (urban +0.28,
+  rural +0.33 SD, age-adjusted; Western ≈ Leipzig) — a large, consistent
+  group-level shift (though site is only ~4% of total IIV variance) that may
+  reflect administration medium, setting, or population and cautions against
+  treating RT-IIV as directly cross-site comparable.
 - **Implication.** If LEVANTE wants RT-IIV as an individual-difference measure,
   the leverage is in **speeded tasks with many trials**; reading it off untimed or
   short tasks will mostly capture task-specific strategy noise. This is a sharper,

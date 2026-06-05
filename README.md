@@ -19,7 +19,7 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `04_construct_structure.qmd` | Construct structure with the **full 13-measure set** — ROAR (reading) and MEFS (EF) treated as real measures, not validators. ESEM first (~2 factors: fluid + verbal/literacy; MEFS→fluid, ROAR→verbal), then age-differentiation (local SEM) under **both** the theory (reasoning/EF/language/reading) and emergent (fluid/verbal) structures, plus a shared-speed/method check. |
 | `05_battery_design.qmd` | **Battery-length optimization.** Combines the calibrated factor structure, per-task marginal reliabilities, and per-task durations (newest/adaptive versions) to find how well shorter task subsets recover factor scores (factor-score determinacy, Monte-Carlo validated). Enumerates the full minutes-vs-recovery frontier; defines Full / Minor / Minimal / broad-screen versions. |
 | `06_within_child_variability.qmd` | **Within-child variability (exploratory).** Extracts three naive per-child indices — RT intra-individual variability (SD log-RT), person-misfit (IRT infit), 2-wave growth deviation — assesses their reliability, then asks whether they cohere across tasks/indices and change with age. §4 adds model-based upgrades (guessing-aware person-fit via recorded `chance`; random-slope growth; RT-IIV variance-components). |
-| `07_rt_variability.qmd` | **RT-IIV deep dive.** Purifies the RT signal (detrend within-task time-course, AR(1), site/age adjustment; all-vs-correct-trials parameter) and re-examines cross-task structure via correlation matrix + factor analysis, across all tasks and a reliable/high-trial subset. Reliability of RT-IIV vs trial count. |
+| `07_rt_variability.qmd` | **RT-IIV deep dive.** Purifies the RT signal (detrend within-task time-course, AR(1); all-vs-correct-trials parameter) and examines cross-task structure (correlation matrix + factor analysis, all tasks & a reliable/high-trial subset), RT-IIV reliability vs trial count, and **site & age differences** in RT-IIV (examined, not regressed out). |
 
 `tasks/` holds per-task trial-level deep dives; `reports/` holds DCC-facing
 write-ups; `old/` holds retired exploratory notebooks. Data and rendered HTML
@@ -68,9 +68,14 @@ are git-ignored.
   detrending the within-task time-course + AR(1) + site/age adjustment roughly
   doubles cross-task RT-IIV coherence (naive ≈0.05 → ≈0.08–0.13). It resolves into
   two *weak* strands — a speeded-task factor (ROAR-Word/Sentence, Hearts&Flowers)
-  and a weaker untimed-cognitive factor — not one general trait. RT-IIV
-  reliability tracks trial count hard (≈0.5 at ≤25 trials → 0.94 at 120), so the
-  usable signal lives in **speeded tasks with many trials**.
+  and a weaker untimed-cognitive factor — not one general trait (all-task mean
+  r≈0.10; reliable subset ≈0.17). RT-IIV reliability tracks trial count hard
+  (≈0.5 at ≤25 trials → 0.94 at 120), so the usable signal lives in **speeded
+  tasks with many trials**. **Site/age examined (not removed):** RT-IIV declines
+  with age (concentrated in speeded tasks) and is markedly higher in Bogotá
+  (urban +0.28, rural +0.33 SD vs Leipzig, age-adjusted; Western ≈ Leipzig) —
+  site is ~4% of total IIV variance but a clear group-level shift (admin medium /
+  setting / population), a caution for cross-site comparability.
 - **The battery is highly compressible** (`05_battery_design.qmd`): because the
   constructs are so intercorrelated, factor scores can be recovered from far
   fewer tasks. Cutting administration time roughly in half (59 → ~31 min, 8
