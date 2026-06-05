@@ -437,12 +437,51 @@ series in the plot: a large share of a child's RT-IIV on any given day is
   year-to-year change (partly real developmental change: the speeded-task gaps
   span ~1.3 yr vs ~0.3–0.5 yr for the core tasks).
 
+## Do the two-factor scores hold up better?
+
+Pooling tasks into the §3 two-factor scores (speeded = swr/sre/hf;
+untimed-cognitive = matrix/mrot/trog/math) *should* cancel task-specific noise
+and stabilise the estimate — if the factors carry real shared variance. We score
+each child's two RT-IIV factors per wave (mean of available within-task z-IIVs,
+≥ 2 tasks) and test their wave-to-wave stability against the single tasks.
+
+```{r factor-stability}
+speeded <- c("swr","sre","hf"); cognitive <- c("matrix","mrot","trog","math")
+fc <- pooled |>
+  mutate(fac = case_when(short %in% speeded ~ "Speeded (swr/sre/hf)",
+                         short %in% cognitive ~ "Cognitive (matrix/mrot/trog/math)", TRUE ~ NA_character_)) |>
+  filter(!is.na(fac)) |> group_by(user_id, wave, fac) |>
+  summarise(score = mean(iivz), ntask = n(), .groups = "drop") |> filter(ntask >= 2)
+fac_stab <- fc |> select(user_id, wave, fac, score) |>
+  pivot_wider(names_from = wave, values_from = score, names_prefix = "w") |>
+  filter(!is.na(w1), !is.na(w2)) |> group_by(fac) |> summarise(n = n(), factor_score_r = cor(w1, w2), .groups = "drop")
+contrast <- tibble(fac = c("Speeded (swr/sre/hf)","Cognitive (matrix/mrot/trog/math)"),
+  mean_single_task_r = c(mean(stab$test_retest[stab$short %in% speeded]),
+                         mean(stab$test_retest[stab$short %in% cognitive])),
+  best_single_task_r = c(max(stab$test_retest[stab$short %in% speeded]),
+                         max(stab$test_retest[stab$short %in% cognitive])))
+fac_stab |> left_join(contrast, by = "fac") |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "Two-factor RT-IIV factor-score stability vs single-task stability")
+```
+
+Aggregation **does not help** here. The cognitive factor score (test–retest
+≈ 0.21, n = 304) only edges past the mean single cognitive task (≈ 0.18) and
+matches the best single task; the speeded factor score (≈ 0.19, n = 57) is
+actually *below* the best single speeded task (Hearts & Flowers alone, 0.47). The
+reason follows directly from §3: the RT-IIV factors are **weak** (inter-task
+r ≈ 0.1–0.17), so the shared variance the factor score targets is small, and
+pooling mostly averages task-specific noise. The durable RT-IIV signal is
+**task-specific** — carried by individual high-trial speeded tasks like H&F —
+rather than by a shared RT-IIV factor. (The speeded composite is further hurt by
+small overlapping n and by mixing tasks with different wave gaps, ~0.4 vs
+~1.3 yr.)
+
 # Synthesis
 
 ```{r save}
 write_rds(list(summary = summ, cor_all = cmat, cor_reliable = cmatf,
                keep = keep, use_trials = USE_TRIALS,
-               stability = stab, stability_pooled = pooled_r),
+               stability = stab, stability_pooled = pooled_r, factor_stability = fac_stab),
           here::here("data/rt_variability_07.rds"))
 ```
 
@@ -471,7 +510,9 @@ write_rds(list(summary = summ, cor_all = cmat, cor_reliable = cmatf,
   RT-IIV test–retest is ≈ 0.21 pooled (up to 0.47 for H&F) — well below its
   within-session reliability, so much of a child's RT-IIV on a given day is
   occasion-specific. It is *partly* trait-like, and again most so for the speeded
-  tasks.
+  tasks. **Aggregating into the two-factor scores does not improve stability**
+  (cognitive ≈ 0.21, speeded ≈ 0.19) — because the factors are weak, the durable
+  RT-IIV signal is task-specific (esp. H&F), not shared-factor.
 - **Implication.** If LEVANTE wants RT-IIV as an individual-difference measure,
   the leverage is in **speeded tasks with many trials**; reading it off untimed or
   short tasks will mostly capture task-specific strategy noise. This is a sharper,

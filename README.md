@@ -79,6 +79,9 @@ are git-ignored.
   stability** (Leipzig + Bogotá, ~1-yr waves): test–retest r ≈ 0.21 pooled (up to
   0.47 for H&F) — well below within-session reliability, so RT-IIV is *partly*
   trait-like with substantial occasion variance, most stable for the speeded tasks.
+  Aggregating into the §3 two-factor scores does **not** improve stability
+  (cognitive ≈0.21, speeded ≈0.19) — the factors are weak, so the durable RT-IIV
+  signal is task-specific (esp. H&F), not shared-factor.
 - **The battery is highly compressible** (`05_battery_design.qmd`): because the
   constructs are so intercorrelated, factor scores can be recovered from far
   fewer tasks. Cutting administration time roughly in half (59 → ~31 min, 8
