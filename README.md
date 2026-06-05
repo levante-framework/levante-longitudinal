@@ -20,6 +20,7 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `05_battery_design.qmd` | **Battery-length optimization.** Combines the calibrated factor structure, per-task marginal reliabilities, and per-task durations (newest/adaptive versions) to find how well shorter task subsets recover factor scores (factor-score determinacy, Monte-Carlo validated). Enumerates the full minutes-vs-recovery frontier; defines Full / Minor / Minimal / broad-screen versions. |
 | `06_within_child_variability.qmd` | **Within-child variability (exploratory).** Extracts three naive per-child indices — RT intra-individual variability (SD log-RT), person-misfit (IRT infit), 2-wave growth deviation — assesses their reliability, then asks whether they cohere across tasks/indices and change with age. §4 adds model-based upgrades (guessing-aware person-fit via recorded `chance`; random-slope growth; RT-IIV variance-components). |
 | `07_rt_variability.qmd` | **RT-IIV deep dive.** Purifies the RT signal (detrend within-task time-course, AR(1); all-vs-correct-trials parameter) and examines cross-task structure (correlation matrix + factor analysis, all tasks & a reliable/high-trial subset), RT-IIV reliability vs trial count, **site & age differences** (examined, not regressed out), and **longitudinal test–retest stability** (Leipzig + Bogotá). |
+| `08_accuracy_variability.qmd` | **Accuracy variability (MSSD).** Parallel to 07 for the binary stream: raw / detrended / excess-over-independence MSSD, the accuracy-level confound, and reliability + longitudinal stability of each. Verdict: accuracy MSSD is reliable & stable *only* because it re-encodes accuracy; de-confounded, nothing survives. |
 
 `tasks/` holds per-task trial-level deep dives; `reports/` holds DCC-facing
 write-ups; `old/` holds retired exploratory notebooks. Data and rendered HTML
@@ -82,6 +83,15 @@ are git-ignored.
   Aggregating into the §3 two-factor scores does **not** improve stability
   (cognitive ≈0.21, speeded ≈0.19) — the factors are weak, so the durable RT-IIV
   signal is task-specific (esp. H&F), not shared-factor.
+- **Accuracy variability is ability in disguise** (`08_accuracy_variability.qmd`):
+  accuracy MSSD (trial-to-trial flip rate) is reliable (≈0.44) and longitudinally
+  stable (≈0.38) — but *only* because it mechanically re-encodes accuracy level
+  (confound ≈−0.7; flip rate = 2·p·(1−p)); detrending the trial trend doesn't touch
+  it. Removing the accuracy dependency (excess-over-independence ≡ lag-1
+  autocorrelation) collapses reliability (≈0.03) and stability (≈0.02) to zero,
+  with no cross-task or age structure. Confirms 06's person-misfit result with a
+  model-free measure, and contrasts 07 (RT keeps real signal beyond mean RT;
+  accuracy keeps none beyond accuracy level).
 - **The battery is highly compressible** (`05_battery_design.qmd`): because the
   constructs are so intercorrelated, factor scores can be recovered from far
   fewer tasks. Cutting administration time roughly in half (59 → ~31 min, 8
