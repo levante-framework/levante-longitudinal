@@ -1,0 +1,323 @@
+---
+title: "07 — RT intra-individual variability: purification and cross-task structure"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 5.5
+execute:
+  warning: false
+  message: false
+---
+
+# The question
+
+In `06` the most promising within-child variability index was **RT
+intra-individual variability (RT-IIV)** — but the *naive* per-run SD of log-RT
+showed almost no cross-task coherence (mean r ≈ 0.05) and only ~4% stable-person
+variance. Two things could be hiding a real signal: (a) the raw SD is
+**contaminated** by systematic structure (within-task time-course,
+autocorrelation, administration differences), and (b) RT-IIV is a second-moment
+estimate, so it is **noisy when trial counts are low**.
+
+This notebook does the cleanup the feedback asked for: purify the RT signal, then
+re-examine whether **cross-task RT-IIV cohere** — both across all tasks and
+restricted to tasks/runs with enough trials.
+
+```{r setup}
+source(here::here("common.R"))
+library(splines); library(psych)
+sc <- read_rds(here("data/scores_all_sites.rds"))
+sites4 <- c("pilot_mpieva_de_main","pilot_uniandes_co_bogota",
+            "pilot_uniandes_co_rural","pilot_western_ca_main")
+rt_tasks <- tibble(
+  task_id = c("egma-math","matrix-reasoning","mental-rotation","trog","vocab",
+              "same-different-selection","hearts-and-flowers","theory-of-mind","swr","sre","pa"),
+  short   = c("math","matrix","mrot","trog","vocab","sds","hf","tom","swr","sre","pa"))
+adap <- c("egma-math","matrix-reasoning","mental-rotation","same-different-selection","trog","vocab")
+
+# ---- analysis parameter: which trials feed RT-IIV (carried throughout) ----
+USE_TRIALS <- "all"      # "all" or "correct"
+
+runs <- sc |> filter(dataset %in% sites4, task_id %in% rt_tasks$task_id, !is.na(score)) |>
+  filter(!(task_id %in% adap) | adaptive) |>
+  group_by(user_id, task_id) |> arrange(age) |> slice(1) |> ungroup() |>
+  select(run_id, user_id, task_id, age)
+```
+
+The trial-set choice (**`r USE_TRIALS`** trials) is a parameter, applied
+everywhere below; a correct-only sensitivity check appears in §1.4.
+
+# 1. Purifying the RT signal
+
+**What actually needs removing.** IIV here is the SD of log-RT *within a run*.
+Because the SD is location-invariant, any nuisance that is **constant within a
+run** — the child's mean speed, the run's mean, a **site/administration
+intercept** — drops out automatically (and in log-space a multiplicative
+site/device slowdown is just such an additive shift). What inflates the
+within-run SD is structure that **varies across trials within a run**: the
+**trial-order time-course** (warm-up, fatigue) and **autocorrelation**. So those
+are what we detrend and filter. Site/age, which can shift the *level* of a
+child's IIV (administration medium, development), are removed at the **IIV
+level** instead (§3).
+
+## 1.1 The within-task time-course (detrending)
+
+Log-RT drifts systematically over the course of a task. We fit a task-level
+model `log RT ~ ns(trial_number, 4) + site` and work with the residuals.
+
+```{r extract, cache=TRUE}
+purify_task <- function(tid, use_trials){
+  rn <- runs |> filter(task_id == tid)
+  tr <- load_levante_trials(task_ids = tid) |>
+    filter(run_id %in% rn$run_id, !is.na(rt_numeric), rt_numeric > 200, rt_numeric < 30000,
+           !is.na(trial_number)) |>
+    left_join(rn |> select(run_id, age), by = "run_id")
+  if (use_trials == "correct") tr <- tr |> filter(correct == 1)
+  tr <- tr |> mutate(lrt = log(rt_numeric))
+  nsite <- n_distinct(tr$dataset)
+  form <- if (nsite > 1) lrt ~ ns(trial_number, 4) + dataset else lrt ~ ns(trial_number, 4)
+  tr$resid <- resid(lm(form, data = tr))
+  # AR(1) innovations within run (pooled rho per task)
+  tr <- tr |> group_by(run_id) |> arrange(trial_number, .by_group = TRUE) |>
+    mutate(lag_resid = lag(resid)) |> ungroup()
+  rho <- cor(tr$resid, tr$lag_resid, use = "complete.obs")
+  tr <- tr |> mutate(innov = resid - rho * lag_resid)
+  trend <- tr |> mutate(tn = pmin(trial_number, quantile(trial_number, .95))) |>
+    group_by(short = rt_tasks$short[rt_tasks$task_id == tid], tn) |>
+    summarise(m = mean(lrt - mean(lrt)), .groups = "drop")
+  per_run <- tr |> group_by(run_id, user_id) |>
+    summarise(ntrial = n(),
+              iiv_raw   = sd(lrt),
+              iiv_detr  = sd(resid),
+              iiv_innov = sd(innov, na.rm = TRUE), .groups = "drop") |>
+    filter(ntrial >= 8) |>
+    mutate(short = rt_tasks$short[rt_tasks$task_id == tid])
+  list(short = rt_tasks$short[rt_tasks$task_id == tid], rho = rho,
+       per_run = per_run, trend = trend, med_n = median(per_run$ntrial))
+}
+ex <- map(rt_tasks$task_id, purify_task, use_trials = USE_TRIALS)
+iiv <- map_dfr(ex, "per_run")
+trend <- map_dfr(ex, "trend")
+```
+
+```{r trend-plot, fig.height=4.3}
+trend |> ggplot(aes(tn, m, color = short)) +
+  geom_line(linewidth = 0.8) + scale_color_viridis_d(name = NULL) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  labs(x = "Trial number", y = "Mean log-RT (centered)",
+       title = "Within-task time-course of log-RT (the trend we detrend out)",
+       subtitle = "Most tasks slow slightly then drift; speeded tasks (swr/hf) speed up with warm-up")
+```
+
+## 1.2 Autocorrelation
+
+Consecutive RTs are positively autocorrelated, so the raw SD mixes
+trial-to-trial noise with slow drift. We estimate a per-task AR(1) coefficient
+on the detrended residuals (within run) and also form the **innovations**
+(uncorrelated component) as a more aggressive purification.
+
+## 1.3 How much each step changes the IIV
+
+```{r purify-summary}
+sb <- function(a, b){ r <- cor(a, b, use = "complete.obs"); 2*r/(1+r) }
+rel_one <- function(tid, use_trials){
+  rn <- runs |> filter(task_id == tid)
+  tr <- load_levante_trials(task_ids = tid) |>
+    filter(run_id %in% rn$run_id, !is.na(rt_numeric), rt_numeric > 200, rt_numeric < 30000, !is.na(trial_number)) |>
+    mutate(lrt = log(rt_numeric))
+  if (use_trials == "correct") tr <- tr |> filter(correct == 1)
+  nsite <- n_distinct(tr$dataset); form <- if (nsite>1) lrt ~ ns(trial_number,4)+dataset else lrt ~ ns(trial_number,4)
+  tr$resid <- resid(lm(form, data = tr))
+  sh <- tr |> group_by(run_id) |> filter(n() >= 12) |> mutate(h = row_number() %% 2) |>
+    group_by(run_id, h) |> summarise(v = sd(resid), .groups = "drop") |>
+    pivot_wider(names_from = h, values_from = v, names_prefix = "h")
+  sb(sh$h0, sh$h1)
+}
+summ <- map_dfr(seq_along(ex), function(i){
+  e <- ex[[i]]
+  tibble(short = e$short, median_trials = e$med_n, n_runs = nrow(e$per_run), ar1_rho = e$rho,
+         `cor(raw,detrended)` = cor(e$per_run$iiv_raw, e$per_run$iiv_detr),
+         `cor(detrended,AR-innov)` = cor(e$per_run$iiv_detr, e$per_run$iiv_innov),
+         iiv_reliability = rel_one(rt_tasks$task_id[i], USE_TRIALS))
+})
+summ |> arrange(desc(iiv_reliability)) |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "Purification diagnostics per task (AR(1) ρ, step effects, split-half reliability)")
+```
+
+Autocorrelation is substantial everywhere (ρ ≈ 0.3–0.6). Detrending moves the
+IIV more for some tasks than others (`cor(raw, detrended)` 0.84–0.99), and the
+AR-innovation IIV stays highly correlated with the detrended one (≥ 0.84), so the
+two purification choices broadly agree. We carry the **detrended** IIV forward as
+primary and use the AR-innovation as a robustness variant.
+
+## 1.4 Sensitivity: all vs correct trials, and an age-varying trend
+
+```{r sens-trials}
+ex_corr <- map(rt_tasks$task_id, purify_task, use_trials = "correct")
+iiv_corr <- map_dfr(ex_corr, "per_run") |> select(run_id, short, iiv_detr_c = iiv_detr)
+sens <- iiv |> select(run_id, short, iiv_detr) |> inner_join(iiv_corr, by = c("run_id","short")) |>
+  group_by(short) |> summarise(`cor(all, correct-only)` = cor(iiv_detr, iiv_detr_c), .groups = "drop")
+sens |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "All-trials vs correct-only detrended IIV agree closely per task")
+```
+
+```{r sens-age}
+# does the within-task trend vary by age? compare detrended IIV with vs without ns(trial)*age
+age_check <- map_dfr(rt_tasks$task_id, function(tid){
+  rn <- runs |> filter(task_id == tid)
+  tr <- load_levante_trials(task_ids = tid) |>
+    filter(run_id %in% rn$run_id, !is.na(rt_numeric), rt_numeric > 200, rt_numeric < 30000, !is.na(trial_number)) |>
+    left_join(rn |> select(run_id, age), by = "run_id") |> mutate(lrt = log(rt_numeric), age_c = age - 9) |>
+    filter(!is.na(age_c))                       # keep complete cases so both models use the same rows
+  if (USE_TRIALS == "correct") tr <- tr |> filter(correct == 1)
+  r0 <- resid(lm(lrt ~ ns(trial_number,4) + dataset, data = tr))
+  r1 <- resid(lm(lrt ~ ns(trial_number,4) * age_c + dataset, data = tr))
+  pr <- tibble(run_id = tr$run_id, r0, r1) |> group_by(run_id) |>
+    summarise(s0 = sd(r0), s1 = sd(r1), .groups = "drop")
+  tibble(short = rt_tasks$short[rt_tasks$task_id == tid],
+         `cor(no-age, age×trial)` = cor(pr$s0, pr$s1, use = "complete.obs"))
+})
+age_check |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "Letting the trial-order trend vary with age barely changes the IIV (r ≈ 1)")
+```
+
+Two checks: across tasks the **all-trials and correct-only** IIVs are
+moderately-to-highly correlated (r ≈ 0.74–0.98 — most similar for the high-trial
+speeded tasks, least for H&F and math), so including error trials shifts the
+estimate somewhat but largely preserves the rank ordering; and letting the
+trial-order trend **vary with age** leaves the IIV essentially unchanged (r ≈ 1).
+We default to the simpler detrend (`ns(trial) + site`) on **all** trials, with
+the trial set carried as a parameter (`USE_TRIALS`) for easy flipping.
+
+# 2. Reliability depends on trial count
+
+```{r rel-ntrials, fig.height=4.3}
+summ |> ggplot(aes(median_trials, iiv_reliability)) +
+  geom_smooth(method = "lm", se = FALSE, color = "grey70", linewidth = 0.7) +
+  geom_point(aes(size = n_runs), alpha = 0.7, color = "#268bd2") +
+  ggrepel::geom_text_repel(aes(label = short), size = 3.2) +
+  scale_x_continuous(trans = "log10") +
+  labs(x = "Median trials per run (log scale)", y = "Split-half reliability of RT-IIV",
+       size = "n runs", title = "RT-IIV reliability rises with trial count",
+       subtitle = "swr (120 trials) ≈ 0.94; tasks under ~25 trials fall below ~0.55")
+```
+
+Reliability climbs steeply with trial count: ROAR-Word (120 trials) reaches
+≈ 0.94, while the shortest tasks (pa, mental rotation, ~ 19–26 trials) sit
+around 0.5. This is the core practical lesson — **RT-IIV is only a dependable
+per-child measure when the task delivers enough trials** — and motivates the
+trial-count–filtered analysis in §3.
+
+# 3. Do cross-task RT-IIV cohere?
+
+We build the child × task matrix of (detrended) RT-IIV, residualise on **site +
+age** (to strip administration-medium and developmental level differences), and
+examine the correlation matrix and factor structure — first across **all
+tasks**, then restricted to tasks that clear a reliability/trial-count bar.
+
+```{r crosstask}
+# site/age adjustment at the IIV level
+iiv_adj <- iiv |> left_join(runs |> select(run_id, age), by = "run_id") |>
+  left_join(sc |> distinct(run_id, dataset), by = "run_id") |>
+  group_by(short) |> mutate(iiv_z = as.numeric(resid(lm(scale(iiv_detr) ~ dataset + age)))) |> ungroup()
+wide <- iiv_adj |> select(user_id, short, iiv_z) |> distinct(user_id, short, .keep_all = TRUE) |>
+  pivot_wider(names_from = short, values_from = iiv_z)
+cmat <- cor(wide |> select(-user_id), use = "pairwise")
+knitr::kable(round(cmat, 2), caption = "Cross-task correlations of purified RT-IIV (site/age-adjusted, all tasks)")
+```
+
+```{r fa-all}
+ord <- rt_tasks$short
+fa_report <- function(cm, N, label){
+  fits <- map_dfr(1:3, function(nf){ f <- suppressWarnings(fa(cm, nfactors = nf, n.obs = N, fm = "ml", rotate = "oblimin"))
+    tibble(factors = nf, TLI = f$TLI, RMSEA = f$RMSEA[1]) })
+  list(fits = fits, load = suppressWarnings(fa(cm, nfactors = 2, n.obs = N, fm = "ml", rotate = "oblimin")))
+}
+mean_off <- function(cm) mean(cm[upper.tri(cm)], na.rm = TRUE)
+allfa <- fa_report(cmat, nrow(wide), "all")
+allfa$fits |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = glue::glue("EFA fit, all tasks (mean off-diagonal r = {round(mean_off(cmat),3)})"))
+L <- unclass(allfa$load$loadings); colnames(L) <- paste0("F", 1:ncol(L))
+as.data.frame(round(L, 2)) |> rownames_to_column("task") |>
+  knitr::kable(caption = "2-factor loadings, all tasks")
+```
+
+```{r fa-filtered}
+keep <- summ |> filter(iiv_reliability >= 0.6, median_trials >= 25, n_runs >= 150) |> pull(short)
+widef <- iiv_adj |> filter(short %in% keep) |> select(user_id, short, iiv_z) |>
+  distinct(user_id, short, .keep_all = TRUE) |> pivot_wider(names_from = short, values_from = iiv_z)
+cmatf <- cor(widef |> select(-user_id), use = "pairwise")
+knitr::kable(round(cmatf, 2),
+  caption = glue::glue("Reliable subset only ({paste(keep, collapse=', ')}): mean off-diagonal r = {round(mean_off(cmatf),3)}"))
+fff <- fa_report(cmatf, nrow(widef), "filtered")
+fff$fits |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "EFA fit, reliable subset")
+Lf <- unclass(suppressWarnings(fa(cmatf, nfactors = 1, n.obs = nrow(widef), fm = "ml"))$loadings)
+as.data.frame(round(Lf, 2)) |> rownames_to_column("task") |> arrange(desc(ML1)) |>
+  knitr::kable(caption = "1-factor loadings, reliable subset")
+```
+
+The picture is **weak, two-stranded coherence — not one general trait**:
+
+- Purification roughly doubles the cross-task correlation versus the naive per-run
+  SD (notebook 06's ≈ 0.05 → ≈ 0.10 detrended; **≈ 0.08 after also removing
+  between-site/age differences**, i.e. some of the apparent coherence was shared
+  site/administration variance). A single general RT-IIV factor still does **not**
+  fit (1-factor TLI ≈ 0.41).
+- The 2-factor solution splits into **two weak strands**: a **speeded-task
+  factor** (ROAR-Word .82, ROAR-Sentence .43, Hearts & Flowers .42 — where rapid
+  responding makes RT-IIV a clean attention/lapse signal) and a **weaker
+  untimed-cognitive factor** (TROG .57, vocab .43, math .37, matrix .33, mental
+  rotation .27 — RT driven by problem difficulty/strategy). They barely correlate
+  with each other, and ToM / Same-&-Different load on neither.
+- Restricting to the **reliable, high-trial tasks** (matrix, vocab, H&F, ToM,
+  ROAR-Word, ROAR-Sentence) raises the mean correlation to ≈ 0.13 and yields a
+  passable single factor (1-factor TLI ≈ 0.84) **dominated by the speeded tasks**
+  (ROAR-Word .71, H&F .51, ROAR-Sentence .50) — consistent with the naive null
+  being partly attenuation from noisy, low-trial estimates, but with the durable
+  signal living in the speeded tasks.
+
+# 4. Age trends of purified RT-IIV
+
+```{r age, fig.height=4.3}
+library(lme4)
+iiv_age <- iiv |> left_join(runs |> select(run_id, age), by = "run_id")
+slope <- fixef(lmer(iiv_detr ~ age + (1|short), data = iiv_age))["age"]
+iiv_age |> ggplot(aes(age, iiv_detr, color = short)) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 0.7) +
+  scale_color_viridis_d(name = NULL) +
+  labs(x = "Age (years)", y = "Purified RT-IIV (SD detrended log-RT)",
+       title = glue::glue("Purified RT-IIV vs age (pooled slope {round(slope,3)}/yr)"),
+       subtitle = "Modest overall decline — children become somewhat more consistent with age")
+```
+
+# Synthesis
+
+```{r save}
+write_rds(list(summary = summ, cor_all = cmat, cor_reliable = cmatf,
+               keep = keep, use_trials = USE_TRIALS),
+          here::here("data/rt_variability_07.rds"))
+```
+
+- **Purification helps, modestly.** Detrending the within-task time-course and
+  accounting for autocorrelation roughly doubles cross-task RT-IIV coherence
+  versus the naive per-run SD (≈ 0.05 → ≈ 0.10), falling to ≈ 0.08 once
+  between-site/age differences are also removed. An age-varying trend does not
+  matter (r ≈ 1); the trial-set choice has a modest per-task effect (r ≈ 0.74–0.98).
+- **Trial count is decisive for stability.** RT-IIV reliability runs from ≈ 0.5
+  (≤ ~25 trials) to ≈ 0.94 (120 trials). Short tasks cannot deliver a dependable
+  per-child RT-IIV; designs that want this measure should ensure enough trials.
+- **Coherence is real but narrow.** RT-IIV resolves into **two weak strands** — a
+  speeded-task factor (ROAR-Word / Hearts & Flowers / ROAR-Sentence) and a weaker
+  untimed-cognitive factor (TROG / vocab / math / matrix / mental rotation) —
+  rather than a single general trait. Filtering to reliable, high-trial tasks
+  leaves a passable single factor **dominated by the speeded tasks** (a plausible
+  attentional-consistency signal).
+- **Implication.** If LEVANTE wants RT-IIV as an individual-difference measure,
+  the leverage is in **speeded tasks with many trials**; reading it off untimed or
+  short tasks will mostly capture task-specific strategy noise. This is a sharper,
+  more optimistic read than 06's flat null — purification + trial-count awareness
+  surfaces a real (if narrow) speeded-task RT-IIV factor.

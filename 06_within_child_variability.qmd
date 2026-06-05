@@ -321,7 +321,9 @@ A first, honest pass — and the headline is a **null on coherence**:
 - **RT-IIV is the cleanest index but not (yet) a trait.** It is reliably measured
   on most tasks (≈ 0.45–0.85) and is **not** an ability proxy (r ≈ −0.05) — but
   it is task-specific and **flat with age**. So it is a sound per-task measure
-  whose cross-situational meaning is unclear here.
+  whose cross-situational meaning is unclear here. (Followed up in depth in
+  `07_rt_variability.qmd`: purifying the RT signal and accounting for trial count
+  surfaces a narrow speeded-task RT-IIV factor.)
 - **Person-misfit, correctly specified, carries almost no usable signal.** Once
   the response function matches the scoring model (fixed guessing at chance),
   infit is well-calibrated on every task (matrix included) and the
