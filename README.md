@@ -23,8 +23,9 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `08_accuracy_variability.qmd` | **Accuracy variability (MSSD).** Parallel to 07 for the binary stream: raw / detrended / excess-over-independence MSSD, the accuracy-level confound, and reliability + longitudinal stability of each. Verdict: accuracy MSSD is reliable & stable *only* because it re-encodes accuracy; de-confounded, nothing survives. |
 
 `tasks/` holds per-task trial-level deep dives; `reports/` holds DCC-facing
-write-ups; `old/` holds retired exploratory notebooks. Data and rendered HTML
-are git-ignored.
+write-ups; `slides/summary.qmd` is a revealjs deck summarizing findings across
+the whole repo (render with `quarto render slides/summary.qmd`); `old/` holds
+retired exploratory notebooks. Data and rendered HTML are git-ignored.
 
 ## Headline findings so far
 
