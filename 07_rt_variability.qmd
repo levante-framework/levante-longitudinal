@@ -192,6 +192,43 @@ trial-order trend **vary with age** leaves the IIV essentially unchanged (r ≈ 
 We default to the simpler detrend (`ns(trial) + site`) on **all** trials, with
 the trial set carried as a parameter (`USE_TRIALS`) for easy flipping.
 
+**Is "all trials" actually the more valid choice?** For a speeded executive task,
+error trials (impulsive errors, lapses) are where attentional variability shows,
+so dropping them could discard signal. We check this directly on **Hearts &
+Flowers**, comparing the two trial sets on internal reliability *and* longitudinal
+stability.
+
+```{r hf-trialset, cache=TRUE}
+hf_wv <- sc |> filter(dataset %in% c("pilot_mpieva_de_main","pilot_uniandes_co_bogota","pilot_uniandes_co_rural"),
+                      task_id == "hearts-and-flowers", !is.na(score)) |>
+  group_by(user_id) |> arrange(age) |> mutate(wave = row_number(), nwave = max(wave)) |>
+  filter(nwave >= 2, wave <= 2) |> ungroup() |> select(run_id, user_id, dataset, wave)
+hf_iiv <- function(ut){
+  tr <- load_levante_trials(task_ids = "hearts-and-flowers") |>
+    filter(run_id %in% hf_wv$run_id, !is.na(rt_numeric), rt_numeric > 200, rt_numeric < 30000, !is.na(trial_number)) |>
+    mutate(lrt = log(rt_numeric))
+  if (ut == "correct only") tr <- tr |> filter(correct == 1)
+  tr$resid <- resid(lm(lrt ~ ns(trial_number, 4) + dataset, data = tr))
+  pr <- tr |> group_by(run_id) |> filter(n() >= 8) |> summarise(iiv = sd(resid), ntr = n(), .groups = "drop") |>
+    left_join(hf_wv, by = "run_id")
+  sh <- tr |> group_by(run_id) |> filter(n() >= 12) |> mutate(h = row_number() %% 2) |>
+    group_by(run_id, h) |> summarise(v = sd(resid), .groups = "drop") |> pivot_wider(names_from = h, values_from = v, names_prefix = "h")
+  rr <- cor(sh$h0, sh$h1, use = "complete.obs")
+  w <- pr |> select(user_id, wave, iiv) |> pivot_wider(names_from = wave, values_from = iiv, names_prefix = "w") |> filter(!is.na(w1), !is.na(w2))
+  tibble(trials = ut, median_trials = median(pr$ntr),
+         `split-half reliability` = 2*rr/(1+rr), `test-retest stability` = cor(w$w1, w$w2))
+}
+bind_rows(hf_iiv("all"), hf_iiv("correct only")) |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "Hearts & Flowers: all trials beats correct-only on both reliability and longitudinal stability")
+```
+
+For Hearts & Flowers, **all trials is clearly more valid**: it gives higher
+split-half reliability (≈ 0.90 vs 0.80) *and* substantially higher wave-to-wave
+stability (≈ 0.47 vs 0.28), with more usable trials (60 vs 52). Including error
+trials both adds trials and captures the impulsive-error/lapse variance that is
+precisely the attentional signal of interest — so the all-trials default is the
+right call here.
+
 # 2. Reliability depends on trial count
 
 ```{r rel-ntrials, fig.height=4.3}
@@ -223,7 +260,19 @@ iiv_adj <- iiv |> group_by(short) |> mutate(iiv_z = as.numeric(scale(iiv_detr)))
 wide <- iiv_adj |> select(user_id, short, iiv_z) |> distinct(user_id, short, .keep_all = TRUE) |>
   pivot_wider(names_from = short, values_from = iiv_z)
 cmat <- cor(wide |> select(-user_id), use = "pairwise")
-knitr::kable(round(cmat, 2), caption = "Cross-task correlations of purified RT-IIV (within-task standardized, all tasks)")
+cor_heatmap <- function(cm, title){
+  m <- cm; diag(m) <- NA
+  df <- as.data.frame(m) |> rownames_to_column("t1") |> pivot_longer(-t1, names_to = "t2", values_to = "r")
+  mid <- mean(range(df$r, na.rm = TRUE))
+  df |> mutate(t1 = factor(t1, levels = rev(rownames(cm))), t2 = factor(t2, levels = rownames(cm)), dark = r > mid) |>
+    ggplot(aes(t2, t1, fill = r)) + geom_tile(color = "white") +
+    geom_text(aes(label = ifelse(is.na(r), "", sprintf("%.2f", r)), color = dark), size = 3, show.legend = FALSE) +
+    scale_fill_viridis_c(na.value = "grey92", name = "r") +
+    scale_color_manual(values = c(`TRUE` = "grey10", `FALSE` = "white"), na.value = "grey40") +
+    coord_fixed() + labs(x = NULL, y = NULL, title = title) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid = element_blank())
+}
+cor_heatmap(cmat, "Cross-task correlations of purified RT-IIV (all tasks)")
 ```
 
 ```{r fa-all}
@@ -247,8 +296,7 @@ keep <- summ |> filter(iiv_reliability >= 0.6, median_trials >= 25, n_runs >= 15
 widef <- iiv_adj |> filter(short %in% keep) |> select(user_id, short, iiv_z) |>
   distinct(user_id, short, .keep_all = TRUE) |> pivot_wider(names_from = short, values_from = iiv_z)
 cmatf <- cor(widef |> select(-user_id), use = "pairwise")
-knitr::kable(round(cmatf, 2),
-  caption = glue::glue("Reliable subset only ({paste(keep, collapse=', ')}): mean off-diagonal r = {round(mean_off(cmatf),3)}"))
+cor_heatmap(cmatf, glue::glue("Reliable subset: {paste(keep, collapse=', ')} (mean off-diagonal r = {round(mean_off(cmatf),3)})"))
 fff <- fa_report(cmatf, nrow(widef), "filtered")
 fff$fits |> mutate(across(where(is.numeric), \(x) round(x, 3))) |>
   knitr::kable(caption = "EFA fit, reliable subset")
