@@ -54,18 +54,32 @@ On corrected v1.2, the eye-catching v1.0 phenomena largely **dissolve**:
 
 ## Abilities differentiate with age; *g* is substantive {.smaller}
 
-- **Local SEM:** verbal/reading pull away from the fluid core with age (broad fluid–verbal 0.93 → 0.83; narrower factor pairs separate more sharply).
+:::: {.columns}
+::: {.column width="48%"}
+- **Local SEM:** verbal/reading pull away from the fluid core with age (broad fluid–verbal 0.93 → 0.83; narrower factor pairs sharper).
 - *g* is **not a method artifact**: a general response-**speed** factor exists but is ~orthogonal to cognitive *g* (r ≈ 0.15).
 - *g* is **within-site**, not a site-mean effect.
+:::
+::: {.column width="52%"}
+![Inter-factor correlations vs age — theory (4-factor) & emergent (2-factor)](figures/age_differentiation.png)
+:::
+::::
 
 ## Battery design: it's compressible {.smaller}
 
 (`05_battery_design` — factor-score determinacy, Monte-Carlo validated)
 
+:::: {.columns}
+::: {.column width="50%"}
 - Full **12-task** battery ≈ **59 min**, recovers factors at **0.94–0.96**.
 - Cut to ≈ **31 min (8 tasks)** → still **0.91–0.95**. Dropping just **ToM + Same-&-Different** (→ ≈ 44 min) costs almost nothing.
 - **Reading is the binding constraint** (keep ROAR-Word).
-- A **~16-min, 4-task screener** recovers the broad fluid/verbal split at ≈ 0.90.
+- A **~16-min, 4-task screener** recovers fluid/verbal at ≈ 0.90.
+:::
+::: {.column width="50%"}
+![Efficient frontier: factor recovery vs battery length](figures/battery_frontier.png)
+:::
+::::
 
 ## Within-child variability: the aim & overview {.smaller}
 
@@ -77,22 +91,47 @@ On corrected v1.2, the eye-catching v1.0 phenomena largely **dissolve**:
 
 ## RT variability: a narrow but real signal {.smaller}
 
+:::: {.columns}
+::: {.column width="56%"}
 (`07_rt_variability`)
 
 - **Purified** RT-IIV: detrend within-task time-course + AR(1); all-trials validated as the better default.
 - **Reliability tracks trial count** hard (≈ 0.5 at ≤ 25 trials → 0.94 at 120) → needs speeded, many-trial tasks.
-- **Two weak strands**: a **speeded-task factor** (ROAR-Word/Sentence, Hearts & Flowers) + a weaker untimed-cognitive one — *not* one general trait.
-- The **speeded factor** is the real one: declines with age (r ≈ −0.42) and is the most longitudinally stable (H&F test–retest 0.47).
-- **Site:** Bogotá markedly more RT-variable than Leipzig (+0.28 / +0.33 SD, age-adjusted) — admin medium / setting / population.
+- **Two weak strands**: a **speeded-task factor** (ROAR-Word/Sentence, H&F) + a weaker untimed-cognitive one — *not* one general trait.
+- **Speeded factor** is the real one: declines with age (r ≈ −0.42), most stable longitudinally (H&F test–retest 0.47).
+- **Site:** Bogotá markedly more RT-variable than Leipzig (+0.28 / +0.33 SD, age-adjusted).
+:::
+::: {.column width="44%"}
+![RT-IIV reliability rises with trial count](figures/rt_reliability_trials.png)
+:::
+::::
+
+## RT-IIV: cross-task structure & development {.smaller}
+
+:::: {.columns}
+::: {.column width="50%"}
+![Cross-task correlations of purified RT-IIV (all tasks) — the speeded cluster](figures/rt_crosstask.png)
+:::
+::: {.column width="50%"}
+![Factor scores vs age: speeded falls steeply, untimed-cognitive flat](figures/rt_factor_age.png)
+:::
+::::
 
 ## Accuracy variability: ability in disguise {.smaller}
 
 (`08_accuracy_variability`)
 
+:::: {.columns}
+::: {.column width="52%"}
 - Accuracy is binary → **MSSD** (trial-to-trial flip rate) is the appropriate index.
 - Raw/detrended MSSD look reliable (≈ 0.44) and stable (≈ 0.38) — **but only because flip rate ≈ 2·p·(1−p) = (inverse) ability** (confound ≈ −0.7).
-- **De-confounding** (excess-over-independence / lag-1 autocorrelation) collapses reliability & stability to ~0 — robust to the baseline (observed-*p* **or** theta-IRF).
-- No separable accuracy-instability trait. **Contrast:** RT keeps real signal beyond mean RT; accuracy keeps none beyond accuracy level.
+- **De-confounding** (excess / lag-1 autocorr) collapses reliability & stability to ~0 — robust to the baseline (observed-*p* **or** theta-IRF).
+- No separable accuracy-instability trait. **Contrast:** RT keeps signal beyond mean RT; accuracy keeps none beyond accuracy level.
+:::
+::: {.column width="48%"}
+![Reliable & stable only while confounded with accuracy](figures/accuracy_confound.png)
+:::
+::::
 
 ## Task deep-dives (1/3): the "artifacts" were the bug {.smaller}
 
