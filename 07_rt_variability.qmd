@@ -472,9 +472,17 @@ reason follows directly from §3: the RT-IIV factors are **weak** (inter-task
 r ≈ 0.1–0.17), so the shared variance the factor score targets is small, and
 pooling mostly averages task-specific noise. The durable RT-IIV signal is
 **task-specific** — carried by individual high-trial speeded tasks like H&F —
-rather than by a shared RT-IIV factor. (The speeded composite is further hurt by
-small overlapping n and by mixing tasks with different wave gaps, ~0.4 vs
-~1.3 yr.)
+rather than by a shared RT-IIV factor.
+
+The speeded factor's small n (57) is a **coverage** artifact, not missing data:
+each speeded task individually has ~190–260 two-wave children, but the three are
+repeated in *different* longitudinal subsamples — **H&F mainly in Leipzig**
+(207 vs 52/0 in Bogotá urban/rural), **ROAR-Word/Sentence mainly in Bogotá**
+(~165 vs ~22 in Leipzig). So only 57 children have ≥ 2 speeded tasks repeated
+(511 have just one), and that composite is effectively the ROAR-Word + ROAR-Sentence
+pair in Bogotá — which is why it underperforms H&F alone (a Leipzig task absent
+from most of those 57). The four cognitive tasks are all core-battery tasks given
+together, so they co-occur within child (n = 304).
 
 # Synthesis
 
