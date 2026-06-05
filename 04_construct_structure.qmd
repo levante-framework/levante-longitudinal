@@ -97,12 +97,13 @@ much shared general variance, a two-factor rotation recovers a verbal-vs-nonverb
 split rather than the reasoning/EF/language theory. (BIC keeps improving past two
 factors, but the extra factors are small and measure-specific.)
 
-# 2. Developmental differentiation, under two structures
+# 2. Developmental differentiation
 
 We track inter-factor correlations as a smooth function of age (kernel-weighted
-local SEM, bandwidth 1.5 yr) under two models: the **theory-driven** structure
-(reasoning / EF / language / reading, MEFS in EF) and the **emergent**
-two-factor structure (fluid / verbal).
+local SEM, bandwidth 1.5 yr) under the candidate structures: the **emergent**
+2-factor (fluid / verbal), 03's preferred **3-factor** (reasoning / EF /
+language, the original LEVANTE constructs on the 9 core tasks), and the
+**theory** 4-factor (reasoning / EF / language / reading, MEFS in EF).
 
 ```{r losem, cache=TRUE}
 theory4 <- "reasoning =~ matrix + mrot + math
@@ -111,6 +112,9 @@ theory4 <- "reasoning =~ matrix + mrot + math
             reading =~ swr + sre + pa"
 emergent2 <- "fluid =~ matrix + mrot + math + hf + mg + sds + mefs
               verbal =~ trog + vocab + tom + swr + sre + pa"
+theory3 <- "reasoning =~ matrix + mrot + math
+            ef        =~ hf + mg + sds
+            language  =~ trog + vocab + tom"   # 03's preferred 3-factor (9 core tasks)
 
 losem_cor <- function(model, pairs, ages = seq(6.5, 11.5, by = 0.5), h = 1.5) {
   map_dfr(ages, function(a0) {
@@ -127,6 +131,7 @@ theory_pairs <- list(c("reasoning","ef"), c("reasoning","language"), c("reasonin
                      c("ef","language"), c("ef","reading"), c("language","reading"))
 ld_theory <- losem_cor(theory4, theory_pairs)
 ld_emerg  <- losem_cor(emergent2, list(c("fluid","verbal")))
+ld_theory3 <- losem_cor(theory3, list(c("reasoning","ef"), c("reasoning","language"), c("ef","language")))
 ```
 
 ```{r losem-plot, fig.height=5}
@@ -169,6 +174,37 @@ So differentiation is real and pervasive — *everything* loosens with age excep
 the reasoning–EF fluid core, which stays fused. How strong the effect looks
 depends on how narrowly the dimensions are defined: sharp between the narrow
 language/reading factors, gentler between the two broad fluid/verbal factors.
+
+## The same pattern under 03's preferred 3-factor model
+
+For completeness we repeat the analysis on the model 03 selected — the original
+**reasoning / EF / language** structure (9 core tasks, no MEFS or reading).
+
+```{r losem-plot-3f, fig.height=4.6}
+ld_theory3 |>
+  ggplot(aes(focal_age, r, color = pair)) +
+  geom_line(linewidth = 1) + geom_point(size = 1.8) +
+  scale_color_brewer(palette = "Dark2", name = NULL) +
+  scale_x_continuous(breaks = 7:11) + coord_cartesian(ylim = c(0.6, 1)) +
+  labs(x = "Focal age (years)", y = "Inter-factor correlation",
+       title = "Differentiation under the 3-factor model (03's preferred structure)",
+       subtitle = "Reasoning–EF stay fused; language pulls away from both with age") +
+  theme(legend.position = "bottom")
+```
+
+```{r losem-tab-3f}
+ld_theory3 |> filter(focal_age %in% c(7, 9, 11)) |>
+  pivot_wider(names_from = pair, values_from = r) |>
+  mutate(across(where(is.numeric), \(x) round(x, 2))) |>
+  knitr::kable(caption = "3-factor inter-factor correlations by focal age")
+```
+
+The picture is the same as in the 4-factor and 2-factor models: **reasoning–EF
+stay fused** (≈ 0.95 → 0.93), while **language differentiates from both** with age
+— reasoning–language 0.92 → 0.77 and EF–language 0.88 → 0.68 from age 7 to 11.
+So the age-differentiation finding is **robust to which structure we impose**: a
+fused fluid core (reasoning + EF) with the verbal/language side pulling away as
+children get older.
 
 # 3. Is the g-loading a shared-speed (method) artifact?
 
@@ -230,7 +266,7 @@ MEFS into the cross-language DIF / measurement-invariance work now that it's a
 modeled measure.
 
 ```{r save}
-write_rds(list(esem2 = f2, losem_theory = ld_theory, losem_emergent = ld_emerg,
+write_rds(list(esem2 = f2, losem_theory = ld_theory, losem_theory3 = ld_theory3, losem_emergent = ld_emerg,
                rt = list(mean_r = mean(cm[upper.tri(cm)], na.rm=TRUE),
                          g_speed = cor(sg$g, sg$speed, use="complete.obs"))),
           here::here("data/construct_structure_04.rds"))
