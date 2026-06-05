@@ -185,6 +185,58 @@ accuracy level itself.** (The scale-free lag-1 autocorrelation gives the same
 verdict.) This mirrors `06`'s person-misfit result — once correctly de-confounded,
 "surprise"/instability in accuracy carries little reliable trait variance.
 
+## Does a better ability anchor (theta) rescue it?
+
+The observed within-run proportion correct is a noisy ability anchor — and for
+adaptive tasks it is pinned near 0.5 regardless of ability. A principled
+alternative is to baseline against the **IRT model's predicted P per trial**
+(from the child's θ̂, item difficulty, and the fixed guessing asymptote the
+scoring uses), so the independence expectation reflects the actual
+item-difficulty sequence. We compare this theta-based excess to the observed-p
+excess on the longitudinal sample.
+
+```{r theta-baseline, cache=TRUE}
+ip <- load_item_parameters(); bylang_t <- c("vocab","theory-of-mind","swr","pa")
+irt_tasks <- setdiff(acc_tasks$task_id, "sre")   # sre has no IRT parameters
+theta_cmp <- map_dfr(irt_tasks, function(tid){
+  w <- wv |> filter(task_id == tid) |> left_join(sc |> distinct(run_id, theta = score, language), by = "run_id")
+  tr <- load_levante_trials(task_ids = tid) |> filter(run_id %in% w$run_id, !is.na(correct), !is.na(trial_number)) |>
+    left_join(w |> select(run_id, wave, theta, language), by = "run_id") |> arrange(run_id, trial_number)
+  ipx <- ip |> filter(task_id == tid)
+  if (tid %in% bylang_t) tr <- tr |> inner_join(ipx |> transmute(language = subset, item_uid, b = difficulty, a = discrimination), by = c("item_uid","language"))
+  else tr <- tr |> inner_join(ipx |> transmute(item_uid, b = difficulty, a = discrimination) |> distinct(item_uid, .keep_all = TRUE), by = "item_uid")
+  if (nrow(tr) < 150) return(NULL)
+  tr <- tr |> mutate(cg = ifelse(is.na(chance), 0, chance), P = pmin(pmax(cg + (1-cg)/(1+exp(-a*(theta-b))), .001), .999)) |>
+    group_by(run_id) |> mutate(lc = lag(correct), lP = lag(P), flip = as.numeric(correct != lc),
+      flip_exp_t = P*(1-lP) + lP*(1-P), half = if_else(trial_number <= median(trial_number), 1L, 2L)) |> ungroup()
+  agg <- function(d) d |> summarise(ntrial = n(), th = first(theta),
+    obs_p = mean(flip, na.rm = TRUE) - 2*mean(correct)*(1-mean(correct)),
+    theta_irf = mean(flip - flip_exp_t, na.rm = TRUE), .groups = "drop")
+  pr <- tr |> group_by(run_id, wave) |> agg() |> filter(ntrial >= 10) |> left_join(sc |> distinct(run_id, user_id), by = "run_id")
+  hh <- tr |> group_by(run_id, half) |> agg() |> filter(ntrial >= 5)
+  one <- function(v){
+    rh <- hh |> select(run_id, half, val = all_of(v)) |> pivot_wider(names_from = half, values_from = val, names_prefix = "h")
+    rr <- scor(rh$h1, rh$h2); rw <- pr |> select(user_id, wave, val = all_of(v)) |> pivot_wider(names_from = wave, values_from = val, names_prefix = "w") |> filter(!is.na(w1), !is.na(w2))
+    tibble(baseline = v, conf_theta = scor(pr[[v]], pr$th), reliability = if (is.na(rr)) NA else 2*rr/(1+rr), test_retest = scor(rw$w1, rw$w2)) }
+  bind_rows(one("obs_p"), one("theta_irf")) |> mutate(short = acc_tasks$short[acc_tasks$task_id == tid])
+})
+theta_cmp |> group_by(baseline) |>
+  summarise(`mean |confound w/ θ|` = mean(abs(conf_theta), na.rm = TRUE),
+            `mean reliability` = mean(reliability, na.rm = TRUE),
+            `mean test–retest` = mean(test_retest, na.rm = TRUE), .groups = "drop") |>
+  mutate(baseline = recode(baseline, obs_p = "observed p", theta_irf = "theta-IRF predicted P")) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  knitr::kable(caption = "De-confounding baseline: observed p vs theta-IRF — neither leaves reliable signal")
+```
+
+It does **not** rescue the index. The theta-IRF baseline is, if anything, *more*
+confounded (≈ −0.2 vs +0.1) and has **negative** internal reliability (noise),
+with only a marginal, untrustworthy uptick in test–retest on a near-zero-reliability
+base — most likely because IRF miscalibration on some tasks (e.g. Same-&-Different,
+ROAR-Word) leaks ability back into the residual. The conclusion is therefore
+**robust to the de-confounding method**: by either a person's own accuracy or a
+model-based θ̂ anchor, there is no stable accuracy-instability signal beyond ability.
+
 # 3. Reliability vs trial count
 
 ```{r rel-ntrials, fig.height=4.3}
