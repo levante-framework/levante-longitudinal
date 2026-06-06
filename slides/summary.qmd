@@ -27,7 +27,7 @@ format:
 
 ## Construct structure: a strong general factor {.smaller}
 
-(`03_sem_growth`)
+(`03_structure_invariance`)
 
 - Cross-sectional (N ≈ 2,000, 4 sites): a **strong general factor**.
 - The three theory factors are **near-collinear** (reasoning–EF r ≈ 0.96).
@@ -49,7 +49,7 @@ The 3-factor model fits slightly better than *g*, but the factors are so highly 
 
 ## …resolving into ~two correlated dimensions {.smaller}
 
-(`04_construct_structure`, full 13-measure set incl. **MEFS** + **ROAR**)
+(`04_differentiation`, full 13-measure set incl. **MEFS** + **ROAR**)
 
 - ESEM → **~2 correlated factors**: **fluid / nonverbal** + **verbal / literacy** (r ≈ 0.67).
 - The added measures land where theory predicts: **MEFS → fluid**, **ROAR reading → verbal**.
@@ -59,12 +59,12 @@ The 3-factor model fits slightly better than *g*, but the factors are so highly 
 
 :::: {.columns}
 ::: {.column width="48%"}
-- **Local SEM:** verbal/reading pull away from the fluid core with age (broad fluid–verbal 0.93 → 0.83; narrower factor pairs sharper).
+- **Local SEM:** the **fluid–verbal correlation falls with age** (0.93 → 0.83) — the two abilities differentiate. Per 03 this is **structural** (loadings ~age-invariant), not measurement drift.
 - *g* is **not a method artifact**: a general response-**speed** factor exists but is ~orthogonal to cognitive *g* (r ≈ 0.15).
 - *g* is **within-site**, not a site-mean effect.
 :::
 ::: {.column width="52%"}
-![Inter-factor correlations vs age — theory (4-factor) & emergent (2-factor)](figures/age_differentiation.png)
+![Fluid–verbal correlation falls with age (local SEM)](figures/age_differentiation.png)
 :::
 ::::
 
