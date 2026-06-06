@@ -147,6 +147,57 @@ at the coarsest level of structure. And per `03` this is **structural, not
 measurement drift**: loadings stay ~age-invariant (metric ΔCFI ≈ −0.01) while the
 factor correlation changes.
 
+## Does it replicate across sites?
+
+For cross-site comparability we use a core **8-task** 2-factor (fluid =
+matrix / mrot / math / H&F / memory; verbal = TROG / vocab / ToM) — dropping
+Same-&-Different (sparse adaptive coverage in age-split subsamples) and the
+MEFS / ROAR measures (coverage varies by site). We compare the fluid–verbal
+correlation in younger vs older children at each site, and trace it continuously
+by site (local SEM).
+
+```{r site-prep}
+xws <- xw |> left_join(distinct(fo, user_id, dataset), by = "user_id") |>
+  mutate(site = recode(dataset, pilot_mpieva_de_main = "Germany", pilot_uniandes_co_bogota = "Bogotá-urban",
+                       pilot_uniandes_co_rural = "Bogotá-rural", pilot_western_ca_main = "Western"))
+m8 <- "fluid =~ matrix+mrot+math+hf+mg\n verbal =~ trog+vocab+tom"
+fv <- function(d){ f <- suppressWarnings(tryCatch(cfa(m8, d, std.lv = TRUE, missing = "fiml"), error = function(e) NULL))
+  if (is.null(f) || !lavInspect(f, "converged")) return(NA_real_); lavInspect(f, "cor.lv")["fluid","verbal"] }
+```
+
+```{r site-youngold}
+xws |> group_by(site) |> group_modify(function(d, ...){ md <- median(d$age)
+  tibble(n = nrow(d), younger = fv(filter(d, age < md)), older = fv(filter(d, age >= md))) }) |> ungroup() |>
+  mutate(differentiation = younger - older, across(c(younger, older, differentiation), \(x) round(x, 3))) |>
+  knitr::kable(caption = "Fluid–verbal correlation younger vs older, by site (split at site median age)")
+```
+
+```{r site-losem, fig.height=4.6}
+losem_site <- function(d, ages = seq(6.5, 11.5, .5), h = 1.5) map_dfr(ages, function(a0){ w <- dnorm((d$age - a0)/h)
+  f <- suppressWarnings(tryCatch(cfa(m8, cbind(d, .w = w), std.lv = TRUE, missing = "fiml", sampling.weights = ".w"), error = function(e) NULL))
+  if (is.null(f) || !lavInspect(f, "converged")) return(NULL)
+  tibble(focal_age = a0, r = lavInspect(f, "cor.lv")["fluid","verbal"]) })
+xws |> group_by(site) |> group_modify(~losem_site(.x)) |> ungroup() |>
+  ggplot(aes(focal_age, r, color = site)) +
+  geom_line(linewidth = 1) + geom_point(size = 1.6) +
+  scale_color_brewer(palette = "Set1", name = NULL) +
+  scale_x_continuous(breaks = 7:11) + coord_cartesian(ylim = c(0.6, 1)) +
+  labs(x = "Focal age (years)", y = "Fluid–verbal correlation",
+       title = "Differentiation with age, by site",
+       subtitle = "Declines in Germany & Western; flatter in Bogotá-urban") +
+  theme(legend.position = "bottom")
+```
+
+The differentiation **replicates across sites**: in every site the younger
+children show a higher fluid–verbal correlation than the older (differentiation
+Δ ≈ 0.06–0.16). It is clearest in **Bogotá-rural (Δ 0.16)** and **Western
+(Δ 0.12)**, and more modest in **Germany (Δ 0.06)** and **Bogotá-urban
+(Δ 0.07)**. The *overall* correlation sits in a narrow band across sites
+(≈ 0.83–0.86), so the **level** of integration is similar everywhere even though
+the developmental **slope** varies. (Bogotá-rural's continuous local SEM didn't
+converge across the full age grid — sparse coverage — so it appears in the table
+but not the curve; its younger/older split confirms the same pattern.)
+
 # 3. Is the g-loading a shared-speed (method) artifact?
 
 A general response-speed factor (same 4-AFC tablet format) could inflate
@@ -190,7 +241,7 @@ big picture is unchanged and now better-anchored:
 | ≈ **two** correlated dimensions, not three | ESEM: fluid (incl. MEFS) + verbal/literacy (incl. ROAR), r ≈ 0.67 |
 | Reasoning & EF do **not** separate | fused at r ≈ 0.92, flat across all ages; no distinct EF factor in ESEM |
 | External measures behave as theory predicts | MEFS → fluid side (.59); ROAR reading → verbal/literacy side (.49–.84) |
-| Dimensions **differentiate with age** | fluid–verbal correlation falls 0.93→0.83 (age 7→11); structural, not loading drift (03) |
+| Dimensions **differentiate with age** | fluid–verbal correlation falls 0.93→0.83 (age 7→11); structural, not loading drift (03); replicates across sites (Δ 0.06–0.16) |
 | g-loading is substantive | not a site-mean effect (03), not a speed artifact (§3) |
 
 The battery, at these ages, measures a **strong fluid/executive ability and a
