@@ -15,7 +15,7 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `00_load_data.qmd` | Pull + cache `levante_data_latest` v1.2, apply cleaning, inventory by site/task/age, **log of known data issues**. Writes `data/scores_all_sites.rds` (cleaned) and `scores_raw.rds`. |
 | `01_data_integrity.qmd` | Per-(site, task) audit + verdict table (`data/task_site_verdict.rds`). Adaptive/mode coverage, RTM, extreme scores, score SE. |
 | `02_growth.qmd` | Per-task longitudinal growth (LMMs) for Leipzig / Bogotá; within-child vs cross-sectional slopes. |
-| `03_sem_growth.qmd` | Construct-level latent growth (Leipzig 3-factor, Bogotá Language) **plus** cross-sectional structure: g vs 3-factor vs bifactor, per-site CFAs, Germany+Canada multigroup, SEM path plots. |
+| `03_sem_growth.qmd` | **Construct structure & measurement invariance.** Disattenuated (fixed-error) task correlations (single-indicator problem); structure comparison g/2f/3f/bifactor read propriety→BIC→fit; per-site replication; site (DE+CA) and age-bin **measurement-invariance ladders**. (Previous latent-growth version preserved in `old/03_sem_growth_lgc.qmd`.) |
 | `04_construct_structure.qmd` | Construct structure with the **full 13-measure set** — ROAR (reading) and MEFS (EF) treated as real measures, not validators. ESEM first (~2 factors: fluid + verbal/literacy; MEFS→fluid, ROAR→verbal), then age-differentiation (local SEM) under three structures — the emergent 2-factor (fluid/verbal), 03's preferred 3-factor (reasoning/EF/language), and the theory 4-factor (+reading) — plus a shared-speed/method check. |
 | `05_battery_design.qmd` | **Battery-length optimization.** Combines the calibrated factor structure, per-task marginal reliabilities, and per-task durations (newest/adaptive versions) to find how well shorter task subsets recover factor scores (factor-score determinacy, Monte-Carlo validated). Enumerates the full minutes-vs-recovery frontier; defines Full / Minor / Minimal / broad-screen versions. |
 | `06_within_child_variability.qmd` | **Within-child variability (exploratory).** Extracts three naive per-child indices — RT intra-individual variability (SD log-RT), person-misfit (IRT infit), 2-wave growth deviation — assesses their reliability, then asks whether they cohere across tasks/indices and change with age. §4 adds model-based upgrades (guessing-aware person-fit via recorded `chance`; random-slope growth; RT-IIV variance-components). |
@@ -35,8 +35,13 @@ retired exploratory notebooks. Data and rendered HTML are git-ignored.
 - With corrected scores, apparent longitudinal **declines disappear** — growth
   is uniformly positive (math steepest, ~0.6 θ/yr).
 - The core battery is a **strong general factor** with only weakly-separable
-  reasoning / EF / language domains (inter-factor r ≈ 0.85–0.96; bifactor
-  specifics degenerate). Structure **replicates across Germany, Bogotá, Canada**.
+  domains (inter-factor r ≈ 0.85–0.96; bifactor specifics degenerate). Among
+  *proper* models the **2-factor (fluid/verbal) is BIC-preferred**, tying the
+  3-factor on fit (`03`). It **replicates across Germany, Bogotá, Canada**, with
+  **configural + approximate-metric** measurement invariance across site and age
+  (loadings ~shared; scalar fails → absolute levels not comparable; ToM not
+  separable at the task level even error-corrected). The age-differentiation
+  (`04`) is therefore **structural**, not loading drift.
 - **Stories/ToM** is a reliable but heterogeneous composite (not unidimensional);
   question type organizes it more than story construct; controls drive most
   cross-language non-invariance; partial scalar invariance achievable on targets.

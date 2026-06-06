@@ -1,0 +1,612 @@
+---
+title: "03 — Latent growth curves on construct factors"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    fig-width: 10
+    fig-height: 6
+execute:
+  warning: false
+  message: false
+---
+
+::: {.callout-note}
+## Now on corrected data (v1.2)
+Re-run on `levante_data_latest` **v1.2** (column-order scoring bug fixed). Two
+consequences for this notebook: (1) the CAT-artifact "declines" that motivated
+the EF-only sensitivity fit are mostly gone — the full 3-factor model is now
+trustworthy; (2) on clean scores the cross-sectional 3-factor construct model
+fits excellently (CFI ≈ 0.995) but the factors are **near-collinear**
+(reasoning–EF r ≈ 0.98, –language ≈ 0.86–0.89) — a strong general factor.
+Bug-era framing below ("artifact", "decline") is superseded by the corrected
+figures.
+:::
+
+# Purpose
+
+02 fit per-task growth at the task level. This notebook lifts it to the
+construct level using longitudinal CFA + latent growth curves. Questions:
+
+1.  Is the construct structure stable across waves (longitudinal measurement
+    invariance)?
+2.  How much do construct-level latent abilities grow between waves?
+
+Realistic scope based on 00/01:
+
+- **Germany — Leipzig** (mpieva-de) has all 9 core tasks at both waves for
+  ~140–210 children. The only site supporting a full 3-factor longitudinal
+  model.
+- **Colombia — Bogotá** has two-wave data only for math + literacy + TROG.
+  We fit a Language factor LGC there and a single-task change score on math.
+- **Canada — Ontario** is still too sparse *longitudinally* (4–21 two-wave kids
+  per task) for its own latent growth model, but it has ample first-wave data
+  and is included in the cross-sectional structural analysis (g vs. 3-factor)
+  at the end.
+
+```{r setup}
+source(here::here("common.R"))
+library(lavaan)
+library(tidySEM)
+library(ggrepel)
+
+scores_all <- read_rds(here("data", "scores_all_sites.rds"))
+```
+
+# Wave construction
+
+For each (dataset, child, task) we order runs by age and keep waves 1 and 2.
+
+```{r build-waves}
+long_datasets <- c("pilot_mpieva_de_main",
+                   "pilot_uniandes_co_bogota",
+                   "pilot_western_ca_main")
+
+waved <- scores_all |>
+  filter(dataset %in% long_datasets, !is.na(score), !is.na(age)) |>
+  group_by(dataset, user_id, task_id) |>
+  arrange(age) |>
+  mutate(wave = row_number()) |>
+  ungroup() |>
+  filter(wave <= 2)
+```
+
+Pivot to wide: one row per (dataset, child), columns like `hf_t1`, `hf_t2`.
+
+```{r wide}
+wide <- waved |>
+  select(dataset, dataset_label, user_id, short, wave, score) |>
+  distinct(dataset, user_id, short, wave, .keep_all = TRUE) |>
+  pivot_wider(id_cols = c(dataset, dataset_label, user_id),
+              names_from = c(short, wave),
+              values_from = score,
+              names_sep = "_t")
+
+dim(wide)
+```
+
+```{r wide-coverage}
+wide |>
+  pivot_longer(-c(dataset, dataset_label, user_id),
+               names_to = "var", values_to = "score") |>
+  group_by(dataset_label, var) |>
+  summarise(n_present = sum(!is.na(score)), .groups = "drop") |>
+  pivot_wider(names_from = dataset_label, values_from = n_present,
+              values_fill = 0L) |>
+  arrange(var) |>
+  knitr::kable()
+```
+
+# Site 1 — Germany — Leipzig: full 3-factor longitudinal model
+
+At each wave, three latent factors:
+
+- Reasoning =~ matrix + mrot
+- ExecFun  =~ hf + mg + sds
+- Language =~ vocab + trog
+
+Two nested versions:
+
+- **Configural**: same structure across waves, loadings free.
+- **Metric**: loadings constrained equal across waves.
+
+Math and ToM are kept aside as observed correlates (single-indicator factors
+are not identified without strong assumptions). Same-task residuals are
+allowed to covary across waves.
+
+```{r de-data}
+de <- wide |> filter(dataset == "pilot_mpieva_de_main") |>
+  select(-dataset, -dataset_label)
+
+# Keep IRT theta scores in original units (multi-group scalar IRT puts T1 and
+# T2 on the same scale by design). Standardizing each column separately would
+# remove the growth signal we're trying to estimate.
+vars <- setdiff(names(de), "user_id")
+de_std <- de
+```
+
+::: {.callout-note}
+## Mode (CAT vs non-CAT) — now a minor residual
+On v1.2 the column-order scoring bug is fixed, so the large apparent θ
+"declines" across the T1(non-CAT)→T2(CAT) boundary are gone (residual mode
+shift < 0.75 logits; see 00/01). The full 3-factor model below is now
+trustworthy; the EF-only fit later in this section — using the
+always-non-adaptive Hearts-and-Flowers / Memory / Same-and-Different tasks —
+is retained as a robustness check rather than a necessary workaround.
+:::
+
+```{r de-models}
+de_configural <- '
+  Reasoning_T1 =~ matrix_t1 + mrot_t1
+  ExecFun_T1   =~ hf_t1 + mg_t1 + sds_t1
+  Language_T1  =~ vocab_t1 + trog_t1
+
+  Reasoning_T2 =~ matrix_t2 + mrot_t2
+  ExecFun_T2   =~ hf_t2 + mg_t2 + sds_t2
+  Language_T2  =~ vocab_t2 + trog_t2
+
+  matrix_t1 ~~ matrix_t2
+  mrot_t1   ~~ mrot_t2
+  hf_t1     ~~ hf_t2
+  mg_t1     ~~ mg_t2
+  sds_t1    ~~ sds_t2
+  vocab_t1  ~~ vocab_t2
+  trog_t1   ~~ trog_t2
+'
+
+de_metric <- '
+  Reasoning_T1 =~ lR1*matrix_t1 + lR2*mrot_t1
+  ExecFun_T1   =~ lE1*hf_t1 + lE2*mg_t1 + lE3*sds_t1
+  Language_T1  =~ lL1*vocab_t1 + lL2*trog_t1
+
+  Reasoning_T2 =~ lR1*matrix_t2 + lR2*mrot_t2
+  ExecFun_T2   =~ lE1*hf_t2 + lE2*mg_t2 + lE3*sds_t2
+  Language_T2  =~ lL1*vocab_t2 + lL2*trog_t2
+
+  matrix_t1 ~~ matrix_t2
+  mrot_t1   ~~ mrot_t2
+  hf_t1     ~~ hf_t2
+  mg_t1     ~~ mg_t2
+  sds_t1    ~~ sds_t2
+  vocab_t1  ~~ vocab_t2
+  trog_t1   ~~ trog_t2
+'
+
+fit_de_cfg <- cfa(de_configural, data = de_std, missing = "fiml", std.lv = TRUE)
+fit_de_met <- cfa(de_metric,     data = de_std, missing = "fiml", std.lv = TRUE)
+
+bind_rows(
+  configural = fitMeasures(fit_de_cfg, c("cfi","tli","rmsea","srmr","aic","bic")),
+  metric     = fitMeasures(fit_de_met, c("cfi","tli","rmsea","srmr","aic","bic")),
+  .id = "model"
+) |> knitr::kable(digits = 3)
+
+anova(fit_de_cfg, fit_de_met)
+```
+
+## Latent growth at the construct level
+
+Intercept and slope factors per construct. With only 2 waves the slope is
+identified by the difference of the latent factor means.
+
+```{r de-lgc}
+de_lgc <- '
+  Reasoning_T1 =~ matrix_t1 + mrot_t1
+  Reasoning_T2 =~ matrix_t2 + mrot_t2
+  ExecFun_T1   =~ hf_t1 + mg_t1 + sds_t1
+  ExecFun_T2   =~ hf_t2 + mg_t2 + sds_t2
+  Language_T1  =~ vocab_t1 + trog_t1
+  Language_T2  =~ vocab_t2 + trog_t2
+
+  matrix_t1 ~~ matrix_t2
+  mrot_t1   ~~ mrot_t2
+  hf_t1     ~~ hf_t2
+  mg_t1     ~~ mg_t2
+  sds_t1    ~~ sds_t2
+  vocab_t1  ~~ vocab_t2
+  trog_t1   ~~ trog_t2
+
+  i_R =~ 1*Reasoning_T1 + 1*Reasoning_T2
+  s_R =~ 0*Reasoning_T1 + 1*Reasoning_T2
+  i_E =~ 1*ExecFun_T1   + 1*ExecFun_T2
+  s_E =~ 0*ExecFun_T1   + 1*ExecFun_T2
+  i_L =~ 1*Language_T1  + 1*Language_T2
+  s_L =~ 0*Language_T1  + 1*Language_T2
+
+  Reasoning_T1 ~ 0*1; Reasoning_T2 ~ 0*1
+  ExecFun_T1   ~ 0*1; ExecFun_T2   ~ 0*1
+  Language_T1  ~ 0*1; Language_T2  ~ 0*1
+'
+
+fit_de_lgc <- growth(de_lgc, data = de_std, missing = "fiml")
+print(fitMeasures(fit_de_lgc, c("cfi","tli","rmsea","srmr","chisq","df","pvalue")))
+```
+
+```{r de-lgc-means}
+parameterEstimates(fit_de_lgc) |>
+  filter(op == "~1", lhs %in% c("i_R","s_R","i_E","s_E","i_L","s_L")) |>
+  select(lhs, est, se, ci.lower, ci.upper, pvalue) |>
+  knitr::kable(digits = 3, caption = "Construct-level intercept and slope means (mpieva-de)")
+```
+
+```{r de-lgc-vars}
+parameterEstimates(fit_de_lgc) |>
+  filter(op == "~~", lhs == rhs,
+         lhs %in% c("i_R","s_R","i_E","s_E","i_L","s_L")) |>
+  select(lhs, est, se) |>
+  knitr::kable(digits = 3,
+               caption = "Construct-level intercept and slope variances")
+```
+
+## Robustness: EF-only LGC (always non-adaptive in Leipzig)
+
+The three EF tasks (hf, mg, sds) are always non-adaptive at mpieva-de, so this
+fit never crossed a mode boundary even under the old scoring. With v1.2 it
+should agree with the full model — a consistency check rather than a fix.
+
+```{r de-ef-only}
+de_ef_lgc <- '
+  ExecFun_T1 =~ hf_t1 + mg_t1 + sds_t1
+  ExecFun_T2 =~ hf_t2 + mg_t2 + sds_t2
+
+  hf_t1  ~~ hf_t2
+  mg_t1  ~~ mg_t2
+  sds_t1 ~~ sds_t2
+
+  i_E =~ 1*ExecFun_T1 + 1*ExecFun_T2
+  s_E =~ 0*ExecFun_T1 + 1*ExecFun_T2
+
+  ExecFun_T1 ~ 0*1; ExecFun_T2 ~ 0*1
+'
+
+fit_de_ef <- growth(de_ef_lgc, data = de_std, missing = "fiml")
+print(fitMeasures(fit_de_ef, c("cfi","tli","rmsea","srmr","chisq","df","pvalue")))
+
+parameterEstimates(fit_de_ef) |>
+  filter(op == "~1", lhs %in% c("i_E","s_E")) |>
+  select(lhs, est, se, ci.lower, ci.upper, pvalue) |>
+  knitr::kable(digits = 3, caption = "EF LGC (mpieva-de, always non-adaptive)")
+```
+
+# Site 2 — Colombia — Bogotá: Language LGC
+
+Only language-domain tasks (sre, swr, trog) have enough two-wave coverage to
+support a factor at both waves. A change-score for math is added.
+
+```{r co-data}
+co <- wide |> filter(dataset == "pilot_uniandes_co_bogota") |>
+  select(-dataset, -dataset_label)
+vars_co <- intersect(c("swr_t1","swr_t2","sre_t1","sre_t2",
+                       "trog_t1","trog_t2","math_t1","math_t2"),
+                     names(co))
+co_std <- co
+```
+
+::: {.callout-warning}
+## Two-indicator model required at Bogotá
+
+The full three-indicator (swr + sre + trog) LGC at Bogotá does not identify:
+at T2, the pairwise overlap of `swr_t2` and `sre_t2` is **1 child** —
+essentially every kid took one or the other, not both. Earlier convergence
+on this model was a numerical artifact (Heywood-case variances, non-PSD
+vcov). We drop sre and fit a two-indicator (swr + trog) LGC with metric
+invariance constraints across waves for identification.
+:::
+
+```{r co-lang-lgc}
+co_lang_lgc <- '
+  Language_T1 =~ a*swr_t1 + b*trog_t1
+  Language_T2 =~ a*swr_t2 + b*trog_t2
+
+  swr_t1  ~~ swr_t2
+  trog_t1 ~~ trog_t2
+
+  i_L =~ 1*Language_T1 + 1*Language_T2
+  s_L =~ 0*Language_T1 + 1*Language_T2
+
+  Language_T1 ~ 0*1; Language_T2 ~ 0*1
+'
+
+# Restrict to kids with at least one T2 observation on a language task so
+# FIML doesn't try to extrapolate too aggressively.
+co_long <- co_std |>
+  filter(if_any(c(swr_t2, trog_t2), \(x) !is.na(x)))
+
+fit_co_lang <- growth(co_lang_lgc, data = co_long, missing = "fiml",
+                       em.h1.iter.max = 5000)
+print(fitMeasures(fit_co_lang, c("cfi","tli","rmsea","srmr","chisq","df","pvalue")))
+
+parameterEstimates(fit_co_lang) |>
+  filter(op == "~1", lhs %in% c("i_L","s_L")) |>
+  select(lhs, est, se, ci.lower, ci.upper, pvalue) |>
+  knitr::kable(digits = 3, caption = "Language LGC intercept/slope (Bogotá, swr + trog only)")
+```
+
+A single-indicator LGC on math is not identified with only 2 timepoints. We
+report the simple T2 − T1 change instead.
+
+```{r co-math-change}
+co_math_change <- co |>
+  filter(!is.na(math_t1), !is.na(math_t2)) |>
+  transmute(user_id, delta = math_t2 - math_t1)
+
+co_math_change |>
+  summarise(n = n(),
+            mean_delta = mean(delta),
+            sd_delta = sd(delta),
+            se_delta = sd(delta) / sqrt(n())) |>
+  knitr::kable(digits = 3, caption = "Math T2 − T1 change (Bogotá)")
+```
+
+# Cross-site comparison
+
+```{r slope-comparison}
+extract_growth <- function(fit, site) {
+  parameterEstimates(fit) |>
+    filter(op == "~1", str_starts(lhs, "i_") | str_starts(lhs, "s_") |
+                       lhs %in% c("i","s")) |>
+    transmute(site, term = lhs,
+              est, se, ci.lower, ci.upper)
+}
+
+bind_rows(
+  extract_growth(fit_de_lgc,  "Germany — Leipzig (full 3-factor)"),
+  extract_growth(fit_de_ef,   "Germany — Leipzig (EF only, robustness)"),
+  extract_growth(fit_co_lang, "Colombia — Bogotá (Language)")
+) |> knitr::kable(digits = 3)
+```
+
+# Factor structure stability (mpieva-de)
+
+Loadings at T1 vs T2 from the configural model. If construct structure is
+stable, T1 and T2 loadings should be close.
+
+```{r loading-stability, fig.height=4}
+parameterEstimates(fit_de_cfg, standardized = TRUE) |>
+  filter(op == "=~") |>
+  mutate(wave = if_else(str_detect(lhs, "_T1"), "T1", "T2"),
+         construct = str_remove(lhs, "_T[12]")) |>
+  select(construct, indicator = rhs, wave, std.all) |>
+  pivot_wider(names_from = wave, values_from = std.all) |>
+  ggplot(aes(x = T1, y = T2, color = construct)) +
+  geom_abline(slope = 1, intercept = 0, lty = 3, color = "grey50") +
+  geom_point(size = 3) +
+  geom_text_repel(aes(label = indicator), size = 3) +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  scale_color_brewer(palette = "Set2") +
+  labs(x = "T1 standardized loading", y = "T2 standardized loading",
+       title = "Loading stability across waves (Leipzig, configural)",
+       color = NULL) +
+  theme(legend.position = "bottom")
+```
+
+# Individual latent factor scores (Leipzig)
+
+```{r factor-scores}
+fscores <- lavPredict(fit_de_cfg, type = "lv") |> as_tibble()
+fscores$user_id <- de_std$user_id
+
+fs_long <- fscores |>
+  pivot_longer(-user_id, names_to = "var", values_to = "score") |>
+  separate(var, into = c("construct", "wave"), sep = "_") |>
+  pivot_wider(names_from = wave, values_from = score)
+
+fs_long |>
+  ggplot(aes(x = T1, y = T2, color = construct)) +
+  geom_abline(slope = 1, intercept = 0, lty = 3, color = "grey50") +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~construct) +
+  scale_color_brewer(palette = "Set2", guide = "none") +
+  coord_equal() +
+  labs(title = "Latent factor scores: T1 → T2 (Leipzig)",
+       x = "Factor score, T1", y = "Factor score, T2")
+```
+
+# Cross-sectional construct structure: one g, or three factors?
+
+The longitudinal sections above are limited to the sites/tasks with retest
+data. The *structural* question — how many dimensions organize the core
+tasks — is better answered cross-sectionally, pooling each child's first
+observation across all four data-rich sites (DE, CO-Bogotá, CO-rural, Western;
+**Western is too sparse longitudinally** — 4–21 two-wave kids per task — but
+contributes plenty of first-wave data here). We compare a single general
+factor (`g`) against three correlated factors, both with age as a predictor.
+
+```{r xsec-data}
+sites4 <- c("pilot_mpieva_de_main", "pilot_uniandes_co_bogota",
+            "pilot_uniandes_co_rural", "pilot_western_ca_main")
+firstobs <- scores_all |>
+  filter(dataset %in% sites4, task_id %in% core_task_ids, !is.na(score)) |>
+  group_by(user_id, short) |> arrange(age) |> slice(1) |> ungroup()
+age_site <- firstobs |> group_by(user_id) |> arrange(age) |> slice(1) |>
+  ungroup() |> select(user_id, age)
+xwide <- firstobs |> select(user_id, short, score) |>
+  distinct(user_id, short, .keep_all = TRUE) |>
+  pivot_wider(names_from = short, values_from = score) |>
+  left_join(age_site, by = "user_id") |>
+  mutate(age_c = age - mean(age, na.rm = TRUE))
+glue("Pooled cross-sectional sample: {nrow(xwide)} children across {length(sites4)} datasets.")
+```
+
+```{r xsec-models}
+g_mod <- '
+  g =~ matrix + mrot + math + hf + mg + sds + trog + vocab + tom
+  g ~ age_c
+'
+f3_mod <- '
+  reasoning =~ matrix + mrot + math
+  ef        =~ hf + mg + sds
+  language  =~ trog + vocab + tom
+  reasoning ~ age_c; ef ~ age_c; language ~ age_c
+'
+fit_g  <- cfa(g_mod,  xwide, std.lv = TRUE, missing = "fiml")
+fit_f3 <- cfa(f3_mod, xwide, std.lv = TRUE, missing = "fiml")
+
+bind_rows(
+  `1-factor (g)`   = fitMeasures(fit_g,  c("cfi","tli","rmsea","srmr","aic","bic")),
+  `3-factor`       = fitMeasures(fit_f3, c("cfi","tli","rmsea","srmr","aic","bic")),
+  .id = "model"
+) |> knitr::kable(digits = 3, caption = "g vs. 3-factor fit (pooled cross-sectional)")
+
+anova(fit_g, fit_f3)
+```
+
+```{r xsec-cor}
+lavInspect(fit_f3, "cor.lv") |> round(2) |>
+  knitr::kable(caption = "Inter-factor correlations (3-factor model)")
+```
+
+## Bifactor: how much is g?
+
+A bifactor model puts every task on a general factor `g` plus an orthogonal
+domain-specific factor (reasoning / EF / language). It directly asks how much
+common variance is general vs. domain-specific.
+
+```{r xsec-bifactor}
+bif_mod <- '
+  g         =~ matrix + mrot + math + hf + mg + sds + trog + vocab + tom
+  reasoning =~ matrix + mrot + math
+  ef        =~ hf + mg + sds
+  language  =~ trog + vocab + tom
+  g ~ age_c
+'
+fit_bif <- cfa(bif_mod, xwide, std.lv = TRUE, missing = "fiml", orthogonal = TRUE)
+
+bind_rows(
+  `1-factor (g)` = fitMeasures(fit_g,   c("cfi","rmsea","bic","npar")),
+  `3-factor`     = fitMeasures(fit_f3,  c("cfi","rmsea","bic","npar")),
+  bifactor       = fitMeasures(fit_bif, c("cfi","rmsea","bic","npar")),
+  .id = "model"
+) |> knitr::kable(digits = 3, caption = "Three models, pooled cross-sectional")
+
+# mean loadings + whether the solution is proper
+Lb <- lavInspect(fit_bif, "std")$lambda |> as.matrix()
+tibble(loading = c("general (g)", "domain-specific"),
+       mean_abs = c(mean(abs(Lb[, "g"])),
+                    mean(abs(Lb[, setdiff(colnames(Lb), "g")][Lb[, setdiff(colnames(Lb), "g")] != 0])))) |>
+  knitr::kable(digits = 2, caption = "Bifactor mean standardised loadings")
+```
+
+The bifactor improves fit marginally, but its **specific factors are tiny and
+the solution is improper** (a Heywood case — at least one negative residual
+variance, and specific-factor loadings collapse/explode). General-factor
+loadings average ≈ 0.6 while specific loadings average ≈ 0.1. The bifactor
+*failing to estimate stable specifics* is itself the result: beyond `g`, the
+domain-specific variance is negligible.
+
+So across all three model framings the story is consistent: **a dominant
+general factor, with reasoning/EF/language only weakly separable.** The
+3-factor model is the best-behaved (proper, BIC-preferred over `g`), so we use
+it for the plots, but it should be read as "g plus modest domains."
+
+```{r sem-plot-3factor, fig.width=11, fig.height=6.5}
+graph_sem(fit_f3, variance_diameter = .18, text_size = 2.8,
+          fix_coord = TRUE) +
+  labs(title = "3-factor model with age (pooled cross-sectional)") +
+  theme(panel.background = element_rect(fill = "white", color = NA))
+```
+
+```{r sem-plot-g, fig.width=11, fig.height=6}
+graph_sem(fit_g, variance_diameter = .18, text_size = 2.8, fix_coord = TRUE) +
+  labs(title = "Single general factor (g) with age") +
+  theme(panel.background = element_rect(fill = "white", color = NA))
+```
+
+## Does the structure hold across sites? (adding Canada)
+
+A formal multigroup CFA across *all* sites is infeasible on the full 9-task
+set: the partial-battery assignment leaves some task pairs with **zero joint
+observations within Bogotá**, which breaks FIML there. We therefore (a) fit
+each model **separately in each site** (descriptive replication, includes
+Canada), and (b) run a **formal 2-group multigroup** for the two sites with
+full mutual coverage (Germany + Canada).
+
+```{r per-group}
+sites3 <- c("pilot_mpieva_de_main", "pilot_uniandes_co_bogota", "pilot_western_ca_main")
+xg <- xwide |>
+  inner_join(scores_all |> distinct(user_id, dataset) |>
+               filter(dataset %in% sites3), by = "user_id") |>
+  mutate(grp = recode(dataset, pilot_mpieva_de_main = "Germany",
+                      pilot_uniandes_co_bogota = "Bogotá",
+                      pilot_western_ca_main = "Canada"))
+
+fit_in <- function(mod, d, orth = FALSE) {
+  m <- tryCatch(cfa(mod, d, std.lv = TRUE, missing = "fiml", orthogonal = orth),
+                error = function(e) NULL)
+  if (is.null(m) || !lavInspect(m, "converged")) return(tibble(cfi = NA, bic = NA, R_EF = NA))
+  cr <- tryCatch(lavInspect(m, "cor.lv"), error = function(e) NULL)
+  tibble(cfi = fitMeasures(m, "cfi"), bic = fitMeasures(m, "bic"),
+         R_EF = if (!is.null(cr) && "reasoning" %in% rownames(cr)) cr["reasoning","ef"] else NA_real_)
+}
+# strip the age regression for clean per-group measurement models
+g_meas  <- "g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom"
+f3_meas <- "reasoning =~ matrix+mrot+math\n ef =~ hf+mg+sds\n language =~ trog+vocab+tom"
+
+per_group <- map_dfr(c("Germany","Bogotá","Canada"), function(g) {
+  d <- filter(xg, grp == g)
+  bind_rows(
+    fit_in(g_meas, d)  |> mutate(model = "g"),
+    fit_in(f3_meas, d) |> mutate(model = "3-factor")
+  ) |> mutate(site = g, n = nrow(d))
+})
+per_group |>
+  select(site, n, model, cfi, bic, reasoning_EF_cor = R_EF) |>
+  knitr::kable(digits = 3, caption = "Per-site CFA fit (3-factor preferred everywhere; factors highly correlated)")
+```
+
+```{r mg-de-canada}
+dc <- filter(xg, grp %in% c("Germany", "Canada"))
+mg_test <- function(eq = NULL) {
+  m <- tryCatch(cfa(f3_meas, dc, group = "grp", std.lv = TRUE, missing = "fiml",
+                    group.equal = eq), error = function(e) NULL)
+  if (is.null(m) || !lavInspect(m, "converged")) return(c(cfi = NA, rmsea = NA, bic = NA))
+  fitMeasures(m, c("cfi","rmsea","bic"))
+}
+bind_rows(
+  configural = mg_test(NULL),
+  metric     = mg_test("loadings"),
+  scalar     = mg_test(c("loadings","intercepts")),
+  .id = "invariance"
+) |> knitr::kable(digits = 3,
+     caption = "3-factor multigroup invariance, Germany + Canada")
+```
+
+**The structure replicates.** In every site the 3-factor model beats `g`
+(BIC) and fits well (CFI ≈ 0.98–0.99), with the same near-collinear factors
+(reasoning–EF r ≈ 0.87–0.96). The Germany+Canada multigroup supports at least
+configural/metric invariance, so the *form* of the structure is shared across
+these two very different sites — even though absolute score levels are not
+comparable (and we don't interpret them).
+
+# Save outputs
+
+```{r save}
+write_rds(fit_de_lgc,   here("data", "fit_de_lgc.rds"))
+write_rds(fit_de_ef,    here("data", "fit_de_ef_lgc.rds"))
+write_rds(fit_co_lang,  here("data", "fit_co_lang_lgc.rds"))
+write_rds(list(g = fit_g, f3 = fit_f3, bifactor = fit_bif),
+          here("data", "fit_xsec_structure.rds"))
+
+glue("Saved fits to data/.")
+```
+
+# Notes / next steps
+
+- **Structure:** with corrected scores the core tasks show a strong general
+  factor plus weakly-separable reasoning / EF / language domains (inter-factor
+  r ≈ 0.85–0.96). The 3-factor model is statistically preferred over `g`, but
+  the bifactor's specific factors degenerate (Heywood) — beyond `g`, domain
+  variance is negligible. This **replicates across Germany, Bogotá, and
+  Canada** (per-site CFAs), and a Germany+Canada multigroup supports
+  configural/metric invariance — the *form* is shared even though levels
+  aren't comparable. A full-site multigroup is blocked by zero joint coverage
+  of some task pairs within Bogotá (partial-battery design).
+- **Two waves limits the longitudinal models.** We can estimate latent
+  intercept and slope but can't test nonlinear growth or cleanly separate
+  measurement error from slope variance. More waves will help.
+- **CO-Bogotá cross-construct LGC isn't yet feasible** — the 1-year retest
+  covered specific task subsets per child, not the full battery.
+- **Western** has enough cross-sectional data to anchor the structural analysis
+  but too few two-wave children per task for its own latent growth model yet.
