@@ -157,42 +157,48 @@ Canada).
 
 ```{r per-site}
 meas <- list(g = "g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom",
+             `2-factor` = "fluid =~ matrix+mrot+math+hf+mg+sds\n verbal =~ trog+vocab+tom",
              `3-factor` = "reasoning =~ matrix+mrot+math\n ef =~ hf+mg+sds\n language =~ trog+vocab+tom")
 grp <- xw |> mutate(site = recode(dataset, pilot_mpieva_de_main="Germany",
   pilot_uniandes_co_bogota="Bogotá-urban", pilot_uniandes_co_rural="Bogotá-rural", pilot_western_ca_main="Canada"))
 per_site <- map_dfr(unique(grp$site), function(s){
   d <- filter(grp, site == s)
   map_dfr(meas, function(m){ f <- tryCatch(cfa(m, d, std.lv=TRUE, missing="fiml"), error=function(e) NULL)
-    if(is.null(f)||!lavInspect(f,"converged")) return(tibble(CFI=NA, BIC=NA, reasoning_EF=NA))
+    if(is.null(f)||!lavInspect(f,"converged")) return(tibble(CFI=NA, BIC=NA, max_factor_r=NA))
     cr <- tryCatch(lavInspect(f,"cor.lv"), error=function(e) NULL)
     tibble(CFI=fitm(f,"cfi"), BIC=fitm(f,"bic"),
-           reasoning_EF = if(!is.null(cr) && "reasoning" %in% rownames(cr)) cr["reasoning","ef"] else NA_real_) }, .id="model") |>
+           max_factor_r = if(!is.null(cr) && is.matrix(cr) && ncol(cr)>1) max(cr[upper.tri(cr)]) else NA_real_) }, .id="model") |>
     mutate(site = s, n = nrow(d)) })
-per_site |> select(site, n, model, CFI, BIC, reasoning_EF) |>
-  mutate(across(c(CFI,reasoning_EF), \(x) round(x,3)), BIC = round(BIC)) |>
-  knitr::kable(caption = "Per-site CFA: the 3-factor beats g everywhere; factors near-collinear")
+per_site |> mutate(model = factor(model, names(meas))) |> arrange(site, model) |>
+  select(site, n, model, CFI, BIC, max_factor_r) |>
+  mutate(across(c(CFI,max_factor_r), \(x) round(x,3)), BIC = round(BIC)) |>
+  knitr::kable(caption = "Per-site CFA (max_factor_r = strongest inter-factor correlation): both 2- and 3-factor beat g; factors near-collinear")
 ```
 
 ```{r mg-de-ca}
 dc <- filter(grp, site %in% c("Germany","Canada"))
-mg <- map_dfr(list(configural=NULL, metric="loadings", scalar=c("loadings","intercepts")), function(eq){
-  f <- tryCatch(cfa(meas[["3-factor"]], dc, group="site", group.equal=eq, std.lv=TRUE, missing="fiml"), error=function(e) NULL)
-  if(is.null(f)||!lavInspect(f,"converged")) return(tibble(CFI=NA, RMSEA=NA))
-  tibble(CFI=fitm(f,"cfi"), RMSEA=fitm(f,"rmsea")) }, .id="invariance") |>
-  mutate(dCFI = c(NA, round(diff(CFI),3)))
-mg |> mutate(across(c(CFI,RMSEA), \(x) round(x,3))) |>
-  knitr::kable(caption = "Site invariance, 3-factor (Germany + Canada multigroup)")
+mg <- imap_dfr(meas[c("2-factor","3-factor")], function(m, modnm){
+  map_dfr(list(configural=NULL, metric="loadings", scalar=c("loadings","intercepts")), function(eq){
+    f <- tryCatch(cfa(m, dc, group="site", group.equal=eq, std.lv=TRUE, missing="fiml"), error=function(e) NULL)
+    if(is.null(f)||!lavInspect(f,"converged")) return(tibble(CFI=NA, RMSEA=NA))
+    tibble(CFI=fitm(f,"cfi"), RMSEA=fitm(f,"rmsea")) }, .id="invariance") |>
+    mutate(model = modnm, dCFI = c(NA, round(diff(CFI),3))) })
+mg |> mutate(across(c(CFI,RMSEA), \(x) round(x,3))) |> select(model, invariance, CFI, RMSEA, dCFI) |>
+  knitr::kable(caption = "Site invariance ladders (Germany + Canada), 2- and 3-factor")
 ```
 
-A multi-factor structure **replicates**: the 3-factor beats g in every site
-(CFI ≈ 0.98–0.99) — and the factors are so near-collinear that in **Bogotá-rural
-the reasoning–EF correlation exceeds 1** (improper), i.e. the two are empirically
-indistinguishable there. The Germany + Canada multigroup supports **configural
-invariance** (CFI 0.99) and **approximate metric** invariance (ΔCFI ≈ −0.017,
-just past the 0.01 guideline — loadings roughly, not strictly, shared); **scalar
-fails decisively** (ΔCFI ≈ −0.13). So the *form* is shared across two very
-different sites, loadings approximately so, but **absolute score levels are not
-comparable** (and we don't interpret them).
+A multi-factor structure **replicates** in every site — both the 2- and 3-factor
+beat g on BIC (CFI ≈ 0.97–0.99). Notably the **2-factor stays proper everywhere**
+(strongest factor r ≈ 0.83–0.85), whereas the **3-factor goes improper in
+Bogotá-rural** (reasoning–EF = 1.10 > 1 — the two fluid factors are empirically
+indistinguishable there): another mark in the 2-factor's favour. The
+Germany + Canada multigroup supports **configural invariance** for both
+(CFI ≈ 0.99), only **approximate metric** invariance (ΔCFI ≈ −0.029 for the
+2-factor, −0.017 for the 3-factor — loadings roughly, not strictly, shared, and a
+touch less so for the broader 2-factor), and **scalar fails decisively**
+(ΔCFI ≈ −0.13). So across two very different sites the *form* is shared and
+loadings approximately so, but **absolute score levels are not comparable** (and
+we don't interpret them).
 
 # 4. Does the structure hold across age?
 
@@ -236,13 +242,13 @@ write_rds(list(disattenuated = cm, structure_fits = map(fits, ~fitm(.x, c("cfi",
   distinct reliable variance.
 - **Structure:** a **dominant general factor with ~two weakly-separable
   domains.** Among proper models the **2-factor (fluid/verbal) is BIC-preferred**,
-  tying the 3-factor on fit; the 3-factor's factors are near-collinear
-  (reasoning–EF ≈ 0.96, and > 1 in Bogotá-rural); the bifactor's specifics
+  tying the 3-factor on fit and staying **proper in every site** (the 3-factor
+  goes improper in Bogotá-rural, reasoning–EF > 1); the bifactor's specifics
   degenerate. Consistent with 04's ESEM.
 - **Site:** the multi-factor structure **replicates** across Germany, Bogotá, and
   Canada; the Germany + Canada multigroup supports configural and **approximate**
-  metric invariance (ΔCFI ≈ −0.017 — form and roughly loadings shared) — but
-  **not scalar** (levels not comparable).
+  metric invariance (ΔCFI ≈ −0.02 to −0.03 — form and roughly loadings shared) —
+  but **not scalar** (levels not comparable).
 - **Age:** loadings are **~invariant across age** (metric ΔCFI ≈ −0.01) while
   intercepts shift — so 04's age-differentiation is a genuine **structural**
   change, not a measurement artifact.
