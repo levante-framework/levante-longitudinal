@@ -1,0 +1,24 @@
+cohort,pi,institution,country,age_min,age_max,school_based,cadence,setting,notes,label
+Pilots '23,Manuel Bohn,Leuphana University Lüneburg,Germany,5,12,FALSE,annual,online / family,,Manuel Bohn · Pilots '23
+Pilots '23,Julián Mariño,Universidad de los Andes,Colombia,5,12,TRUE,annual,school,,Julián Mariño · Pilots '23
+Pilots '23,Daniel Ansari,Western University,Canada,5,12,TRUE,annual,school,,Daniel Ansari · Pilots '23
+Pilots '23,Ben Domingue,Stanford University,(secondary analysis),NA,NA,NA,n/a,secondary analysis,Analyzes other sites' pilot data; no recruitment.,Ben Domingue · Pilots '23
+Pilots '25,Manuel Bohn,Leuphana University Lüneburg,Germany,2,5,FALSE,annual,home / everyday,Vest-camera everyday recordings; 2 planned waves.,Manuel Bohn · Pilots '25
+Pilots '25,Charles Nelson,Boston Children's Hospital,United States,2,4,FALSE,annual,lab,,Charles Nelson · Pilots '25
+Pilots '25,Tami Katzir,University of Haifa,Israel,5,10,TRUE,annual,school,Hebrew & Arabic cohorts.,Tami Katzir · Pilots '25
+Pilots '25,Julián Mariño,Universidad de los Andes,Colombia,2,4,TRUE,annual,daycare,Early-childhood adaptation (2–4).,Julián Mariño · Pilots '25
+Pilots '25,Ivy Nkrumah,University of Cape Coast,Ghana,5,12,TRUE,annual,school,With C. Y. Kwaah; grades 1–5.,Ivy Nkrumah · Pilots '25
+RfP1,Alicia Forsberg,University of Sheffield,UK,6,9,TRUE,annual,school / online,Annex card lists 5–13; main table 6–9 (used).,Alicia Forsberg · RfP1
+RfP1,Catherine Lebel,University of Calgary,Canada,0,5,FALSE,annual,home,PdP cohort; LEVANTE added at 5–6. Annex lists U Alberta.,Catherine Lebel · RfP1
+RfP1,Rogier Kievit,Donders Institute (Radboud),Netherlands,5,9,FALSE,annual,lab / center,SMILEY (~5) & Skippy (~9) cohorts.,Rogier Kievit · RfP1
+RfP1,Zoe Ngo,Max Planck Inst. Human Development,Germany,4,10,FALSE,annual,lab,4- & 6-yr cohorts; wearable cameras + MRI.,Zoe Ngo · RfP1
+RfP1,Iliana Karipidis,University of Zurich,Switzerland,5,12,TRUE,annual,school,Mono- & multilingual cohorts.,Iliana Karipidis · RfP1
+RfP1,Cecilia Calero,Universidad Torcuato Di Tella,Argentina,6,9,TRUE,annual,school,Cohorts 6–7 & 8–9 (annex card showed 6–7).,Cecilia Calero · RfP1
+RfP2,Diego Lucumí,Universidad de los Andes,Colombia,6,11,TRUE,annual,school / community,Pacific-coast / PDET municipalities.,Diego Lucumí · RfP2
+RfP2,Dragan Gasevic,Monash University,Colombia,9,12,TRUE,biannual,school,FLoRA SRL; data every 6 months.,Dragan Gasevic · RfP2
+RfP2,Santiago Cueto,GRADE,Peru,8,11,TRUE,annual,school,APPrendemos cohort; 50 public schools.,Santiago Cueto · RfP2
+RfP2,Kwaku Poku Asante,Kintampo Health Research Center,Ghana,10,12,FALSE,annual,community cohort,GRAPHS birth-cohort follow-up.,Kwaku Poku Asante · RfP2
+RfP2,Luciano Gasser,University of Teacher Education Bern,Switzerland,9,12,TRUE,annual,school,120 classrooms / 50 schools; CLASS.,Luciano Gasser · RfP2
+RfP2,Dana McCoy,Harvard University,Peru,6,8,TRUE,annual,school / home,Rural Andean RCT follow-up.,Dana McCoy · RfP2
+RfP2,Debarati Mukherjee,Public Health Foundation of India,India,6,10,TRUE,annual,school / community,MAASTHI Bengaluru cohort.,Debarati Mukherjee · RfP2
+RfP2,Laura Di Giunta,Sapienza University of Rome,Colombia/Ecuador/Mexico/CR,6,12,TRUE,annual,school,Arukay; deck inconsistent re Costa Rica vs Dominican Republic.,Laura Di Giunta · RfP2
