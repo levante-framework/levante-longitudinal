@@ -111,6 +111,13 @@ retired exploratory notebooks. Data and rendered HTML are git-ignored.
   H&F lower but item-specific). One broken item found (TROG German
   `embedding_cat_cow_chase_black`, ~6.5 logits); top Math flags are
   multiplication/subtraction — likely curriculum-timing, not translation.
+- **ToM reality-check DIF was (mostly) data defects**
+  (`tasks/tom_reality_check_bug.qmd`): a shadow re-processing of raw CO+DE data
+  proved answer-key inversions (4 below-chance cells, both sites),
+  hostile-attribution content mislabeled as ToM (110 DE runs, Sept–Oct 2024),
+  and trial-map shifts. Repairing only the provable defects removes ~70% of
+  scalar non-invariance with controls included (χ² 702 → 212). The paper's 12
+  hand-flagged items all map onto identified defects.
 
 ## Remaining known data issues (v1.2)
 
