@@ -41,6 +41,7 @@ is preserved at `old/03_sem_growth_lgc.qmd`.)*
 ```{r setup}
 source(here::here("common.R"))
 library(lavaan)
+library(tidySEM)
 sc <- read_rds(here("data/scores_all_sites.rds"))
 sites4 <- c("pilot_mpieva_de_main","pilot_uniandes_co_bogota",
             "pilot_uniandes_co_rural","pilot_western_ca_main")
@@ -146,6 +147,24 @@ fit (CFI ≈ 0.95) — the third factor does not earn its parsimony cost. And th
 is **a dominant general factor with ~two weakly-separable domains** ("g plus
 modest domains"), consistent with 04's ESEM. We carry the proper candidates
 (g / 2-factor / 3-factor) into the invariance tests.
+
+The three proper candidates as path diagrams (standardized loadings, pooled
+cross-sectional). The curved arrows between latent factors show how strongly the
+domains correlate — visibly near-collinear in the 2- and 3-factor models.
+
+```{r sem-diagrams, fig.width=10, fig.height=3.6}
+diag_mods <- list(
+  "1-factor (g)" = "g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom",
+  "2-factor (fluid / verbal)" = "fluid =~ matrix+mrot+math+hf+mg+sds\n verbal =~ trog+vocab+tom",
+  "3-factor (reasoning / EF / language)" = "reasoning =~ matrix+mrot+math\n ef =~ hf+mg+sds\n language =~ trog+vocab+tom")
+for (nm in names(diag_mods)) {
+  f <- cfa(diag_mods[[nm]], xw, std.lv = TRUE, missing = "fiml")
+  print(graph_sem(f, variance_diameter = .15, text_size = 2.6, fix_coord = TRUE) +
+        labs(title = nm) +
+        theme(panel.background = element_rect(fill = "white", color = NA),
+              plot.title = element_text(size = 11)))
+}
+```
 
 # 3. Does the structure replicate across sites?
 
