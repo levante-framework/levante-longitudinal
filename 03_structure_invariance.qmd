@@ -152,17 +152,23 @@ The three proper candidates as path diagrams (standardized loadings, pooled
 cross-sectional). The curved arrows between latent factors show how strongly the
 domains correlate — visibly near-collinear in the 2- and 3-factor models.
 
-```{r sem-diagrams, fig.width=10, fig.height=3.6}
-diag_mods <- list(
-  "1-factor (g)" = "g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom",
-  "2-factor (fluid / verbal)" = "fluid =~ matrix+mrot+math+hf+mg+sds\n verbal =~ trog+vocab+tom",
-  "3-factor (reasoning / EF / language)" = "reasoning =~ matrix+mrot+math\n ef =~ hf+mg+sds\n language =~ trog+vocab+tom")
-for (nm in names(diag_mods)) {
-  f <- cfa(diag_mods[[nm]], xw, std.lv = TRUE, missing = "fiml")
-  print(graph_sem(f, variance_diameter = .15, text_size = 2.6, fix_coord = TRUE) +
-        labs(title = nm) +
-        theme(panel.background = element_rect(fill = "white", color = NA),
-              plot.title = element_text(size = 11)))
+```{r sem-diagrams, fig.width=12, fig.height=3.0}
+obs <- c("matrix","mrot","math","hf","mg","sds","trog","vocab","tom")
+diag_specs <- list(
+  list(nm = "1-factor (g)", mod = "g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom",
+       top = c("","","","","g","","","","")),
+  list(nm = "2-factor (fluid / verbal)", mod = "fluid =~ matrix+mrot+math+hf+mg+sds\n verbal =~ trog+vocab+tom",
+       top = c("","","fluid","","","","","verbal","")),
+  list(nm = "3-factor (reasoning / EF / language)",
+       mod = "reasoning =~ matrix+mrot+math\n ef =~ hf+mg+sds\n language =~ trog+vocab+tom",
+       top = c("","reasoning","","","ef","","","language","")))
+for (s in diag_specs) {
+  f <- cfa(s$mod, xw, std.lv = TRUE, missing = "fiml")
+  lay <- do.call(get_layout, c(as.list(c(s$top, obs)), rows = 2))
+  gg <- prepare_graph(f, layout = lay)
+  edges(gg) <- edges(gg) |> filter(from != to)       # loadings + factor correlations only (drop variances)
+  nodes(gg) <- nodes(gg) |> mutate(label = name)      # node names only
+  print(plot(gg) + labs(title = s$nm) + theme(plot.title = element_text(size = 11)))
 }
 ```
 
