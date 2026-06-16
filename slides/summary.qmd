@@ -37,15 +37,18 @@ format:
 ## The structural models {.smaller}
 
 :::: {.columns}
-::: {.column width="50%"}
-![Single general factor](figures/sem_g.png)
+::: {.column width="33%"}
+![1-factor (g)](figures/sem_g.png)
 :::
-::: {.column width="50%"}
-![Three theory factors — but inter-factor r ≈ 0.85–0.96](figures/sem_3factor.png)
+::: {.column width="33%"}
+![2-factor (fluid / verbal) — BIC-preferred](figures/sem_2factor.png)
+:::
+::: {.column width="33%"}
+![3-factor (reasoning / EF / language)](figures/sem_3factor.png)
 :::
 ::::
 
-The 3-factor model fits slightly better than *g*, but the factors are so highly correlated that it is effectively **one general factor with weakly-separable domains**.
+Among *proper* models the **2-factor (fluid/verbal) is BIC-preferred**, tying the 3-factor on fit; the factors are near-collinear (r ≈ 0.85–0.96) and the bifactor's specifics degenerate — effectively **one general factor with ~two weakly-separable domains**.
 
 ## …resolving into ~two correlated dimensions {.smaller}
 
