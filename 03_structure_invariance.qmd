@@ -172,6 +172,85 @@ for (s in diag_specs) {
 }
 ```
 
+## Robustness: adding the ROAR reading tasks
+
+ROAR (word / sentence / phoneme) reading isn't a LEVANTE core task and its site
+coverage is uneven, so it stays out of the invariance ladders below (and out of
+the disattenuated matrix — Germany has no ROAR-phoneme data, and ROAR-Sentence
+carries no model-based SE). But we can add it to the **pooled** structure
+comparison to ask: does the 2-factor hold with reading, and is reading separable?
+
+```{r roar-structure}
+fo12 <- sc |> filter(dataset %in% sites4, task_id %in% c(core_task_ids,"swr","sre","pa"), !is.na(score)) |>
+  group_by(user_id, short) |> arrange(age) |> slice(1) |> ungroup()
+xw12 <- fo12 |> group_by(short) |> mutate(z = as.numeric(scale(score))) |> ungroup() |>
+  select(user_id, short, z) |> distinct(user_id, short, .keep_all = TRUE) |> pivot_wider(names_from = short, values_from = z)
+roar_mods <- list(
+  `g` = "g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom+swr+sre+pa",
+  `2-factor (reading in verbal)` = "fluid =~ matrix+mrot+math+hf+mg+sds\n verbal =~ trog+vocab+tom+swr+sre+pa",
+  `3-factor (reading split)` = "fluid =~ matrix+mrot+math+hf+mg+sds\n verbal =~ trog+vocab+tom\n reading =~ swr+sre+pa")
+rfits <- imap(roar_mods, ~cfa(.x, xw12, std.lv = TRUE, missing = "fiml"))
+map_dfr(rfits, ~tibble(CFI = fitm(.x,"cfi"), BIC = fitm(.x,"bic"), proper = !heywood(.x)), .id = "model") |>
+  mutate(CFI = round(CFI,3), BIC = round(BIC)) |>
+  knitr::kable(caption = "12-task structure comparison (pooled, with ROAR)")
+```
+
+```{r roar-cor}
+lavInspect(rfits[["3-factor (reading split)"]], "cor.lv")[c("fluid","verbal","reading"), c("fluid","verbal","reading")] |>
+  round(2) |> knitr::kable(caption = "fluid / verbal / reading correlations (reading-split model)")
+```
+
+With reading added, a **separate reading factor is BIC-justified** (3-factor BIC
+36297 < 2-factor 36358 < g 36465) — three reading indicators carry enough distinct
+variance to cohere. But it sits squarely in the positive manifold: reading
+correlates ≈ 0.85 with verbal **and ≈ 0.87 with fluid** — about equally with both,
+i.e. it relates to the *general* factor rather than specifically to language
+(echoing 04, where reading relates to *g* about as much as to language). So
+reading is a **weakly-separable sub-domain** — BIC-justified once it has three
+indicators, but near-collinear with everything; the "g + a couple of modest
+domains" reading is unchanged.
+
+## Age effects on the abilities
+
+Regressing standardized age onto each latent shows how strongly — and how
+*differently* — the abilities grow (measurement model + age regressions).
+
+```{r age-effects}
+age_mods <- list(
+  `g` = "g =~ matrix+mrot+math+hf+mg+sds+trog+vocab+tom\n g ~ age_c",
+  `2-factor` = "fluid =~ matrix+mrot+math+hf+mg+sds\n verbal =~ trog+vocab+tom\n fluid ~ age_c\n verbal ~ age_c",
+  `3-factor` = "reasoning =~ matrix+mrot+math\n ef =~ hf+mg+sds\n language =~ trog+vocab+tom\n reasoning ~ age_c\n ef ~ age_c\n language ~ age_c")
+afits <- map(age_mods, ~cfa(.x, xw, std.lv = TRUE, missing = "fiml"))
+imap_dfr(afits, ~standardizedSolution(.x) |> filter(op == "~") |>
+           transmute(model = .y, latent = lhs, `age effect (std)` = round(est.std, 3), p = round(pvalue, 3))) |>
+  knitr::kable(caption = "Standardized age → latent effects (cross-sectional)")
+```
+
+```{r age-sem-fig, fig.width=11, fig.height=4}
+obs <- c("matrix","mrot","math","hf","mg","sds","trog","vocab","tom")
+lay <- do.call(get_layout, c(as.list(c(
+  c("","","","","age_c","","","",""),
+  c("","","fluid","","","","","verbal",""), obs)), rows = 3))
+ssol <- standardizedSolution(afits[["2-factor"]])      # show standardized estimates
+gg <- prepare_graph(afits[["2-factor"]], layout = lay)
+e <- edges(gg) |> filter(from != to)
+e$label <- map2_chr(e$from, e$to, function(a, b){
+  r <- ssol |> filter((lhs == a & rhs == b) | (lhs == b & rhs == a))
+  if (nrow(r) == 0) return(NA_character_)
+  sig <- ifelse(r$pvalue[1] < .001, "***", ifelse(r$pvalue[1] < .01, "**", ifelse(r$pvalue[1] < .05, "*", "")))
+  sprintf("%.2f%s", r$est.std[1], sig) })
+edges(gg) <- e
+nodes(gg) <- nodes(gg) |> mutate(label = ifelse(name == "age_c", "age", name))
+print(plot(gg) + labs(title = "2-factor with age → fluid / verbal (standardized)"))
+```
+
+Both abilities rise steeply with age, but **fluid grows faster than verbal**
+(standardized age effects ≈ 0.57 vs 0.47). That differential growth is part of
+*why* they de-correlate: if the fluid core accelerates relative to verbal across
+childhood, the two pull apart — the structural side of the same coin as 04's
+falling fluid–verbal correlation. (The reasoning/EF/language 3-factor shows the
+same: the fluid-side factors carry the steeper age effects.)
+
 # 3. Does the structure replicate across sites?
 
 A full all-site multigroup is blocked by Bogotá's partial battery (zero joint
