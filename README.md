@@ -19,9 +19,8 @@ See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 | `04_differentiation.qmd` | Construct structure with the **full 13-measure set** — ROAR (reading) and MEFS (EF) treated as real measures, not validators. ESEM first (~2 factors: fluid + verbal/literacy; MEFS→fluid, ROAR→verbal), then age-differentiation (local SEM) of the **2-factor** (fluid/verbal, 03's preferred structure; fluid–verbal r falls 0.93→0.83 with age, **replicating across all four sites**, Δ 0.06–0.16), plus a shared-speed/method check. |
 | `05_battery_design.qmd` | **Battery-length optimization.** Combines the calibrated factor structure, per-task marginal reliabilities, and per-task durations (newest/adaptive versions) to find how well shorter task subsets recover factor scores (factor-score determinacy, Monte-Carlo validated). Enumerates the full minutes-vs-recovery frontier; defines Full / Minor / Minimal / broad-screen versions. |
 | `06_within_child_variability.qmd` | **Within-child variability (exploratory).** Extracts three naive per-child indices — RT intra-individual variability (SD log-RT), person-misfit (IRT infit), 2-wave growth deviation — assesses their reliability, then asks whether they cohere across tasks/indices and change with age. §4 adds model-based upgrades (guessing-aware person-fit via recorded `chance`; random-slope growth; RT-IIV variance-components). |
-| `07_rt_variability.qmd` | **RT-IIV deep dive.** Purifies the RT signal (detrend within-task time-course, AR(1); all-vs-correct-trials parameter) and examines cross-task structure (correlation matrix + factor analysis, all tasks & a reliable/high-trial subset), RT-IIV reliability vs trial count, **site & age differences** (examined, not regressed out), and **longitudinal test–retest stability** (Leipzig + Bogotá). |
+| `07_rt_variability.qmd` | **RT-IIV deep dive.** Purifies the RT signal — the pipeline is chosen by a systematic 2⁴ sweep (§1.4: detrend by trial? all/correct? **detrend by item difficulty?** remove autocorrelation?) scored on split-half reliability + test–retest → `log RT ~ ns(trial) + difficulty×trial + site`, all trials, autocorrelation kept. Then cross-task structure (correlation + factor analysis), reliability vs trial count, **site & age differences**, and **longitudinal test–retest stability** (Leipzig + Bogotá). |
 | `08_accuracy_variability.qmd` | **Accuracy variability (MSSD).** Parallel to 07 for the binary stream: raw / detrended / excess-over-independence MSSD, the accuracy-level confound, and reliability + longitudinal stability of each. Verdict: accuracy MSSD is reliable & stable *only* because it re-encodes accuracy; de-confounded, nothing survives. |
-| `09_rt_iiv_purification.qmd` | **Choosing the RT-IIV pipeline.** Systematic 2⁴ sweep over four purification choices (detrend by trial? all/correct? **detrend by item difficulty?** remove autocorrelation?), each scored on split-half reliability + longitudinal test–retest. Difficulty-detrending + all-trials win (esp. non-speeded tasks); AR removal trades split-half up for test–retest down. |
 | `09_longitudinal_coverage.qmd` | **Network planning view (not analyzed data).** Curated metadata for all 23 funded grants (pilots, RfP1, RfP2) transcribed from the Q1 2026 Advisory Committee deck — PI, data-collection country, recruitment setting, school-based flag, target age range, and planned wave schedule (`n_waves`/`cadence`) — written to `09_site_coverage.csv`. Figures: an enrollment-age heatmap (site × age) and a stacked longitudinal-coverage plot where each recruited year-cohort is followed forward by its planned waves (dots = waves), with the marginal histogram as the column-sum. Coverage is densest at ages 6–11 (peak ~age 9) and thin at 2–5 and 13+ (the empirical case for RfP3's downward extension). |
 
 `tasks/` holds per-task trial-level deep dives; `reports/` holds DCC-facing
@@ -73,24 +72,24 @@ retired exploratory notebooks. Data and rendered HTML are git-ignored.
   growth (slope reliability ≈0 — naive 2-wave reliabilities were optimistic); a
   variance-components model puts the stable-person share of RT-IIV at just ~4%.
   Measuring variability as a *trait* needs more waves + within-task manipulations.
-- **Purified RT-IIV shows a narrow speeded-task factor** (`07_rt_variability.qmd`):
-  detrending the within-task time-course + AR(1) + site/age adjustment roughly
-  doubles cross-task RT-IIV coherence (naive ≈0.05 → ≈0.08–0.13). It resolves into
-  two *weak* strands — a speeded-task factor (ROAR-Word/Sentence, Hearts&Flowers)
-  and a weaker untimed-cognitive factor — not one general trait (all-task mean
-  r≈0.10; reliable subset ≈0.17). RT-IIV reliability tracks trial count hard
-  (≈0.5 at ≤25 trials → 0.94 at 120), so the usable signal lives in **speeded
-  tasks with many trials**. **Site/age examined (not removed):** RT-IIV declines
-  with age (concentrated in speeded tasks) and is markedly higher in Bogotá
-  (urban +0.28, rural +0.33 SD vs Leipzig, age-adjusted; Western ≈ Leipzig) —
-  site is ~4% of total IIV variance but a clear group-level shift (admin medium /
-  setting / population), a caution for cross-site comparability. **Longitudinal
-  stability** (Leipzig + Bogotá, ~1-yr waves): test–retest r ≈ 0.21 pooled (up to
-  0.47 for H&F) — well below within-session reliability, so RT-IIV is *partly*
-  trait-like with substantial occasion variance, most stable for the speeded tasks.
-  Aggregating into the §3 two-factor scores does **not** improve stability
-  (cognitive ≈0.21, speeded ≈0.19) — the factors are weak, so the durable RT-IIV
-  signal is task-specific (esp. H&F), not shared-factor.
+- **Purified RT-IIV shows a modest, speeded-led factor** (`07_rt_variability.qmd`):
+  the purification pipeline is chosen by a systematic 2⁴ sweep (§1.4) — detrend by
+  trial **and item difficulty**, all trials, autocorrelation kept (it is partly
+  person-stable). Difficulty-detrending is the key win, mostly on the non-speeded
+  tasks. This roughly triples cross-task coherence (naive ≈0.05 → ≈0.13 all tasks,
+  ≈0.20 reliable subset): a **broad factor led by the speeded tasks** (ROAR-Word/
+  Sentence, Hearts&Flowers) that the difficulty-purified non-speeded tasks now also
+  load onto — no longer two clean strands, but not a strong general trait either.
+  Reliability tracks trial count (≈0.5 at ≤25 trials → 0.94 at 120), though
+  difficulty-detrending lifts several moderate-trial non-speeded tasks. **Site/age:**
+  RT-IIV declines with age (speeded factor ≈−0.19 z/yr; untimed-cognitive only
+  ≈−0.06) and is markedly higher in Bogotá (urban +0.29, rural +0.38 SD vs Leipzig,
+  age-adjusted; Western ≈ Leipzig; site ~4.6% of total variance). **Longitudinal
+  stability** (~1-yr waves): test–retest r ≈ 0.22 pooled (up to 0.47 for H&F) — well
+  below within-session reliability, so RT-IIV is *partly* trait-like, most stable
+  for the speeded tasks. Aggregating into the §3 two-factor scores does **not**
+  improve stability (cognitive ≈0.25, speeded ≈0.20) — the durable RT-IIV signal is
+  task-specific (esp. H&F), not shared-factor.
 - **Accuracy variability is ability in disguise** (`08_accuracy_variability.qmd`):
   accuracy MSSD (trial-to-trial flip rate) is reliable (≈0.44) and longitudinally
   stable (≈0.38) — but *only* because it mechanically re-encodes accuracy level
