@@ -52,3 +52,12 @@ execute:
   freeze: auto
   warning: false
   message: false
+
+# Keep figure PNGs small enough for Quarto Pub's per-file upload limit:
+# render at 96 dpi without the 2× retina multiplier (dense scatter/spaghetti
+# plots otherwise exceed ~1 MB and 413 on publish). After changing this, wipe
+# `_freeze/` so figures actually re-render at the new size.
+knitr:
+  opts_chunk:
+    fig.retina: 1
+    dpi: 96
