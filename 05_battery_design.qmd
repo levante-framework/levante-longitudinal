@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include _disclaimer.qmd >}}
+
 # The question
 
 03–04 established that the core battery measures a **strong, highly-correlated

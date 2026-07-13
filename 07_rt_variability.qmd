@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include _disclaimer.qmd >}}
+
 # The question
 
 In `06` the most promising within-child variability index was **RT

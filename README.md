@@ -8,6 +8,45 @@ package. Shared conventions, palettes, loaders, and cleaning helpers live in
 
 See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
 
+## Quarto book
+
+The notebook stack is also assembled into a browsable **Quarto book** (chapter
+sidebar + search). Config in `_quarto.yml`; landing page `index.qmd`; the two
+warning banners (AI-generated / preliminary-analysis) live in `_disclaimer.qmd`
+and are `{{< include >}}`d at the top of every chapter, so they render in the
+book *and* in standalone chapter renders.
+
+Render locally (needs Redivis access via `rlevante`):
+
+```bash
+quarto render                          # whole book → _book/
+quarto render 07_rt_variability.qmd    # one chapter (into _book/, with nav)
+```
+
+`_book/`, `_freeze/`, and `.quarto/` are **gitignored** — rendered results and
+the execution cache stay out of this (public) repo.
+
+### Publishing is GATED
+
+`quarto publish quarto-pub` pushes the rendered book to a **public, indexed
+URL**. This is **unpublished, multi-site, human-subjects analysis**, so do not
+publish without:
+
+- consortium / collaborator sign-off on public exposure of the cross-site
+  findings (MPI-Leipzig, Uniandes-Bogotá, Western-Canada);
+- a check that the rendered figures — including the **de-identified
+  individual-level trajectory plots in ch. 01** — are acceptable to expose.
+
+Every chapter carries the AI-generated + preliminary-analysis banners. When
+cleared, publish from an interactive shell (needs a one-time browser login):
+
+```bash
+quarto render && cd . && quarto publish quarto-pub --no-render
+```
+
+Commit the resulting `_publish.yml` so re-publishes reuse the same URL. Keep the
+clearance note here current after each publish.
+
 ## Main notebook stack (run in order)
 
 | Notebook | What it does |

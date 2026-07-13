@@ -1,0 +1,54 @@
+project:
+  type: book
+  output-dir: _book
+  # Only the numbered chapters + landing page are part of the book;
+  # tasks/, reports/, old/ are left as standalone files.
+  render:
+    - index.qmd
+    - "0[0-9]_*.qmd"
+
+book:
+  title: "LEVANTE Longitudinal Analyses"
+  subtitle: "Exploratory psychometrics of the core-task battery"
+  author: "Michael C. Frank & the LEVANTE Data Coordinating Center"
+  date: today
+  search: true
+  repo-url: https://github.com/levante-framework/levante-longitudinal
+  sidebar:
+    style: docked
+  chapters:
+    - index.qmd
+    - part: "Data & integrity"
+      chapters:
+        - 00_load_data.qmd
+        - 01_data_integrity.qmd
+    - part: "Growth & construct structure"
+      chapters:
+        - 02_growth.qmd
+        - 03_structure_invariance.qmd
+        - 04_differentiation.qmd
+        - 05_battery_design.qmd
+    - part: "Within-child variability"
+      chapters:
+        - 06_within_child_variability.qmd
+        - 07_rt_variability.qmd
+        - 08_accuracy_variability.qmd
+    - part: "Network context"
+      chapters:
+        - 09_longitudinal_coverage.qmd
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    df-print: paged
+    number-sections: false          # chapter titles already carry 00–09
+    fig-width: 9
+    fig-height: 5.5
+
+execute:
+  freeze: auto
+  warning: false
+  message: false

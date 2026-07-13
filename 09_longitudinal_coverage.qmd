@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include _disclaimer.qmd >}}
+
 # Purpose
 
 A planning view of the **whole LEVANTE network** — pilots, RfP1, and RfP2 — not

@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include _disclaimer.qmd >}}
+
 # The question
 
 `07` showed RT intra-individual variability has a real (if narrow) signal once

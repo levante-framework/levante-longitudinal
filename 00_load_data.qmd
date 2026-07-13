@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include _disclaimer.qmd >}}
+
 # Purpose
 
 This notebook is the entry point for the LEVANTE longitudinal analysis

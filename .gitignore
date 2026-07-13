@@ -62,3 +62,12 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Quarto book
+_book/
+.quarto/
+_freeze/
+/_publish.yml.local
+
+/.quarto/
+**/*.quarto_ipynb

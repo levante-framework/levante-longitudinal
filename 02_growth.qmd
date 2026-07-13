@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include _disclaimer.qmd >}}
+
 ::: {.callout-note}
 ## Now on corrected data (v1.2)
 Re-run on `levante_data_latest` **v1.2**, which fixes the IRT column-order

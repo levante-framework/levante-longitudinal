@@ -1,0 +1,64 @@
+---
+title: "Overview"
+---
+
+{{< include _disclaimer.qmd >}}
+
+# LEVANTE longitudinal analyses
+
+An exploratory analysis of the **LEVANTE core-task battery** — a sequence of
+reproducible notebooks that walk from raw data validation through construct
+structure to within-child variability. Data come from `levante_data_latest` on
+Redivis (currently the bug-fixed **v1.2** release) via the `rlevante` package;
+shared conventions, palettes, and loaders live in `common.R`.
+
+Each chapter computes its results inline from the data, so every number and
+figure is current with the code that produced it.
+
+## The arc
+
+**Data & integrity** — pull and clean the data ([00](00_load_data.qmd)); audit
+per-(site, task) integrity, adaptive/mode artifacts, and extreme scores
+([01](01_data_integrity.qmd)).
+
+**Growth & construct structure** — longitudinal traces and simple growth
+([02](02_growth.qmd)); the g-vs-domains structure and cross-site measurement
+invariance ([03](03_structure_invariance.qmd)); emergent dimensions,
+age-differentiation, and the role of *g* with ROAR + MEFS as real measures
+([04](04_differentiation.qmd)); and how short the battery can be while still
+recovering the factor scores ([05](05_battery_design.qmd)).
+
+**Within-child variability** — a first pass at three consistency indices and
+whether they cohere ([06](06_within_child_variability.qmd)); a deep dive on
+**RT intra-individual variability** — purification, cross-task structure,
+site/age, and longitudinal stability ([07](07_rt_variability.qmd)); and the
+**accuracy** companion using MSSD, and why nothing survives de-confounding
+([08](08_accuracy_variability.qmd)).
+
+**Network context** — enrollment ages and longitudinal coverage across the
+LEVANTE network ([09](09_longitudinal_coverage.qmd)).
+
+## A few headline findings
+
+- A **column-order IRT scoring bug** in an earlier data release mis-scored the
+  CAT/guessing-floor items; found, validated, fixed upstream (data re-released as
+  v1.2). With corrected scores, apparent longitudinal declines disappear.
+- The core battery is a **strong general factor** with weakly-separable domains
+  that **differentiate with age**; structure replicates across Germany, Bogotá,
+  and Canada.
+- The battery is **highly compressible** — administration time can be roughly
+  halved while still recovering every construct at ≈ 0.9 determinacy.
+- **Within-child variability** is elusive: RT variability carries a real but
+  narrow, speeded-task signal (cleanest after detrending item difficulty);
+  accuracy variability, properly de-confounded, is essentially ability in
+  disguise.
+
+## Reproducibility & provenance
+
+The notebooks render from Redivis data (gitignored; access via `rlevante`).
+`common.R` is sourced by every chapter. This book was assembled with
+[Quarto](https://quarto.org); see the
+[source repository](https://github.com/levante-framework/levante-longitudinal).
+
+This is **internal, exploratory work of the LEVANTE Data Coordinating Center** —
+please read the two banners above before using anything here.

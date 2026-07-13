@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include _disclaimer.qmd >}}
+
 # The question
 
 What latent structure organizes the nine core tasks — and can we trust that
