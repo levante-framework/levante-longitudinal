@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Question
 
 `stories_tom.html` found ToM is not cleanly unidimensional (ev1/ev2 ≈ 1.9).

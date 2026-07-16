@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Purpose
 
 01 flagged that Bogotá math shows a striking pattern where high T1 scores

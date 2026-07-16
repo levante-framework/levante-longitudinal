@@ -38,6 +38,19 @@ site/age, and longitudinal stability ([07](07_rt_variability.qmd)); and the
 **Network context** — enrollment ages and longitudinal coverage across the
 LEVANTE network ([09](09_longitudinal_coverage.qmd)).
 
+## Appendices: task deepdives
+
+Per-task psychometric reports, plus cross-task analyses, collected as
+appendices. **Task deepdives** cover each core task and the ROAR literacy
+measures: item structure and difficulty, DIF, answer-key forensics, and
+scoring audits — Hearts & Flowers, Memory, Math (plus item calibration and
+EAP-vs-ML scoring), Shape Rotation, Sentence Understanding (TROG),
+Vocabulary, Stories (ToM; three companion reports on dimensionality, DIF,
+and the reality-check bug), ROAR-Word, ROAR-Phoneme/Sentence, and the
+ROAR-Sentence (SRE) scoring deepdive. **Cross-task analyses** collect the
+corrected longitudinal trajectories, the cross-language DIF batch,
+test–retest figures, and the training-vs-development comparison.
+
 ## A few headline findings
 
 - A **column-order IRT scoring bug** in an earlier data release mis-scored the

@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Question & hypothesis
 
 Our ToM analyses (`stories_tom`, `tom_dif_multigroup`) found large cross-site

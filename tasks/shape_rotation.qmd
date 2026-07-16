@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Question
 
 Shape Rotation (mental rotation) asks the child to pick which of two

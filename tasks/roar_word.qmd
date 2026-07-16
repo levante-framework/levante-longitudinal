@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Purpose
 
 01 flagged a cluster of ~40 children in Bogotá whose ROAR-Word `ability_cat`

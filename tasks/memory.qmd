@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Question
 
 The release notes flagged Memory scoring as not accounting for grid size

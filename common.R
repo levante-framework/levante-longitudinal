@@ -189,8 +189,18 @@ score_with_method <- function(trials, task, dataset, method = "EAP",
   if (!requireNamespace("mirt", quietly = TRUE)) {
     stop("Install the mirt R package to use score_with_method().")
   }
-  if (is.null(scoring_table)) scoring_table <- rlevante::fetch_scoring_table()
-  if (is.null(registry_table)) registry_table <- rlevante::fetch_registry_table()
+  # Prefer the disk-cached metadata tables (data/*_cache.rds) so notebooks
+  # render without live Redivis calls; fall back to fetching.
+  if (is.null(scoring_table)) {
+    st_cache <- here::here("data/scoring_table_cache.rds")
+    scoring_table <- if (file.exists(st_cache)) readRDS(st_cache)
+                     else rlevante::fetch_scoring_table()
+  }
+  if (is.null(registry_table) && is.null(mod_rec)) {
+    rt_cache <- here::here("data/registry_table_cache.rds")
+    registry_table <- if (file.exists(rt_cache)) readRDS(rt_cache)
+                      else rlevante::fetch_registry_table()
+  }
   spec <- rlevante:::get_model_spec(task, dataset, scoring_table)
   if (is.null(mod_rec)) mod_rec <- rlevante:::get_model_record(spec, registry_table)
 

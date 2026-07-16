@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Purpose
 
 `tasks/math.qmd` showed that the Bogotá math T1→T2 "regression to the mean"

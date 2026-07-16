@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Question
 
 TROG (Test for Reception of Grammar) probes comprehension of specific

@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Question
 
 The v1.0 release notes flagged **Pattern Matching** (matrix reasoning) and

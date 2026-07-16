@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Purpose
 
 02 showed Vocabulary with the same worrying dynamic as Math: non-adaptive →
@@ -123,7 +125,8 @@ validate_vocab <- function(tr_site, dataset, mod_rec) {
                              mod_rec = mod_rec) |> select(run_id, fixed = score)
   buggy <- rlevante:::score_irt(
     recode_trials(tr_site),
-    as.list(rlevante:::get_model_spec("vocab", dataset, fetch_scoring_table())),
+    as.list(rlevante:::get_model_spec("vocab", dataset,
+              read_rds(here::here("data/scoring_table_cache.rds")))),
     mod_rec) |> transmute(run_id, buggy = as.numeric(score))
   v <- gold |> inner_join(fixed, by = "run_id") |> inner_join(buggy, by = "run_id")
   tibble(

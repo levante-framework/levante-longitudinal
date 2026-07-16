@@ -11,6 +11,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Purpose
 
 Presentation-ready before/after longitudinal trajectories for the two tasks

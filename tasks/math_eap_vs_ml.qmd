@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Headline
 
 Mike asked for a side-by-side EAP vs ML rescoring of Bogotá math, expecting
@@ -41,10 +43,12 @@ model items **by position, not by name**. Same kid, same responses,
 reordered columns → wildly different θ.
 
 ```{r mirt-bug}
-st <- fetch_scoring_table()
-rt <- fetch_registry_table()
-spec    <- rlevante:::get_model_spec("math", "pilot_uniandes_co_bogota", st)
-mod_rec <- rlevante:::get_model_record(spec, rt)
+# cached copies of the scoring table + v1_14 math ModelRecord
+# (get_model_record's live download path is broken against the current
+# redivis package)
+spec <- rlevante:::get_model_spec("math", "pilot_uniandes_co_bogota",
+          read_rds(here::here("data/scoring_table_cache.rds")))
+mod_rec <- read_rds(here::here("data/math_model_record_v1_14.rds"))
 
 mod_recon <- mirt::multipleGroup(data = mod_rec@data, group = mod_rec@groups,
                                   pars = model_vals(mod_rec), TOL = NaN)

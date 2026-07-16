@@ -11,6 +11,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Purpose
 
 Test–retest scatter figures in the style of the core-tasks paper (Figure 4):

@@ -1,11 +1,12 @@
 project:
   type: book
   output-dir: _book
-  # Only the numbered chapters + landing page are part of the book;
-  # tasks/, reports/, old/ are left as standalone files.
+  # Numbered chapters + landing page are the main book; per-task deepdives in
+  # tasks/ are appendices. reports/, old/ stay standalone.
   render:
     - index.qmd
     - "0[0-9]_*.qmd"
+    - "tasks/*.qmd"
 
 book:
   title: "LEVANTE Longitudinal Analyses"
@@ -36,6 +37,30 @@ book:
     - part: "Network context"
       chapters:
         - 09_longitudinal_coverage.qmd
+  appendices:
+    - part: "Task deepdives"
+      chapters:
+        - tasks/hearts_and_flowers.qmd
+        - tasks/memory.qmd
+        - tasks/math.qmd
+        - tasks/math_item_calibration.qmd
+        - tasks/math_eap_vs_ml.qmd
+        - tasks/shape_rotation.qmd
+        - tasks/sentence_understanding.qmd
+        - tasks/vocab.qmd
+        - tasks/stories_tom.qmd
+        - tasks/tom_dimensionality.qmd
+        - tasks/tom_dif_multigroup.qmd
+        - tasks/tom_reality_check_bug.qmd
+        - tasks/roar_word.qmd
+        - tasks/roar_literacy.qmd
+        - tasks/sre.qmd
+    - part: "Cross-task analyses"
+      chapters:
+        - tasks/corrected_trajectories.qmd
+        - tasks/crosslang_dif_batch.qmd
+        - tasks/test_retest_figures.qmd
+        - tasks/training_vs_development.qmd
 
 format:
   html:

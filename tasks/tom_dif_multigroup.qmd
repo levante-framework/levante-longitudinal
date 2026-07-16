@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Question
 
 The logistic-DIF screen in `stories_tom.html` flagged ~every shared item,

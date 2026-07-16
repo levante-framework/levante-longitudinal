@@ -1,0 +1,4 @@
+- source: project
+  quarto-pub:
+    - id: ad456cc2-a252-450b-a684-8c8a46f051ac
+      url: https://mcfrank.quarto.pub/levante-longitudinal

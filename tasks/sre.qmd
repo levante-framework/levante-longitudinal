@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Scope
 
 **Sentence Reading Efficiency (SRE)** is a speeded literacy measure adapted

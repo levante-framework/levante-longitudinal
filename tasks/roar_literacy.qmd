@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Scope
 
 The two remaining ROAR literacy measures, which use **different scoring** from

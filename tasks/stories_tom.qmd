@@ -12,6 +12,8 @@ execute:
   message: false
 ---
 
+{{< include ../_disclaimer.qmd >}}
+
 # Purpose
 
 Deep-dive on the Stories / Theory-of-Mind (ToM) task: rescore with the
@@ -79,7 +81,8 @@ corrected <- imap_dfr(mods, function(mr, ds) {
   fixed <- score_with_method(trd, "tom", ds, method = "EAP", mod_rec = mr) |>
     select(run_id, corrected = score, se = score_se)
   buggy <- rlevante:::score_irt(recode_trials(trd),
-            as.list(rlevante:::get_model_spec("tom", ds, fetch_scoring_table())), mr) |>
+            as.list(rlevante:::get_model_spec("tom", ds,
+              read_rds(here::here("data/scoring_table_cache.rds")))), mr) |>
     transmute(run_id, buggy = as.numeric(score))
   fixed |> left_join(buggy, by="run_id") |> left_join(gold, by="run_id") |>
     mutate(dataset = ds)
@@ -104,11 +107,14 @@ pairs <- sc |> filter(task_id == "theory-of-mind", dataset %in% names(mods)) |>
   summarise(pub_t1=published[wave==1], pub_t2=published[wave==2],
             cor_t1=corrected[wave==1], cor_t2=corrected[wave==2], .groups="drop")
 
+safe_cor <- \(x, y) if (sum(!is.na(x) & !is.na(y)) >= 3)
+  cor(x, y, use = "complete.obs") else NA_real_
+
 pairs |> group_by(dataset_label) |>
   filter(n() >= 10) |>
   summarise(n = n(),
-            retest_r_published = cor(pub_t1, pub_t2, use="complete.obs"),
-            retest_r_corrected = cor(cor_t1, cor_t2, use="complete.obs"),
+            retest_r_published = safe_cor(pub_t1, pub_t2),
+            retest_r_corrected = safe_cor(cor_t1, cor_t2),
             mean_change_published = mean(pub_t2 - pub_t1, na.rm=TRUE),
             mean_change_corrected = mean(cor_t2 - cor_t1, na.rm=TRUE),
             .groups = "drop") |>
