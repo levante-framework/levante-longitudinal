@@ -446,6 +446,93 @@ per-trial RT and accuracy — admits several principled treatments:
    assumes a *per-item* deadline $d$; SRE has only a global deadline, so $d$
    would be an arbitrary pseudo-deadline. Not a natural fit.
 
+## Zero-filled IRT (ROAR-team suggestion)
+
+The ROAR team has begun exploring a simple item-based approach: **fill the
+response matrix with zeros for unreached items, then fit a standard IRT
+model**. Speed enters the score through the block of zeros — a fast accurate
+reader clears more of the bank. We fit one dense Rasch model per item bank
+(Spanish: Bogotá + rural jointly, 1,382 runs × 376 items; German: 151 × 200;
+English: 91 × 530 after dropping 18 never-reached items;
+[`_fit_sre_zerofill_irt.R`](\_fit_sre_zerofill_irt.R)).
+
+```{r zerofill}
+zf <- read_rds(here("data/sre_zerofill_scores.rds")) |>
+  group_by(dataset) |>
+  mutate(zf_z = scale(theta_zerofill)[, 1]) |>
+  ungroup()
+
+zf_first <- sre_first |>
+  inner_join(zf |> select(dataset, run_id, zf_z), by = c("dataset", "run_id"))
+
+zf_first |>
+  pivot_longer(c(age, pa, swr), names_to = "criterion", values_to = "crit") |>
+  filter(!is.na(crit)) |>
+  group_by(dataset_label, criterion) |>
+  filter(n() >= 20) |>
+  summarise(n = n(),
+            r_rate = cor(score_new, crit),
+            r_zerofill = cor(zf_z, crit), .groups = "drop") |>
+  knitr::kable(digits = 2,
+               caption = "Zero-filled Rasch vs corrected rate score: validity")
+```
+
+```{r zerofill-stability}
+zf_stab <- sre_scores_pub |>
+  filter(dataset == "pilot_uniandes_co_bogota") |>
+  inner_join(zf |> select(dataset, run_id, zf_z), by = c("dataset", "run_id")) |>
+  inner_join(scores_cmp |> select(dataset, run_id, score_new),
+             by = c("dataset", "run_id")) |>
+  group_by(user_id) |>
+  filter(n() >= 2) |>
+  arrange(time_started) |>
+  summarise(gap = as.numeric(difftime(time_started[2], time_started[1],
+                                      units = "days")),
+            across(c(zf_z, score_new), list(t1 = ~.x[1], t2 = ~.x[2])),
+            .groups = "drop") |>
+  filter(gap > 300)
+
+tibble(n_pairs = nrow(zf_stab),
+       rate = cor(zf_stab$score_new_t1, zf_stab$score_new_t2),
+       zerofill = cor(zf_stab$zf_z_t1, zf_stab$zf_z_t2)) |>
+  knitr::kable(digits = 2,
+               caption = "Bogotá 16-month stability: zero-filled Rasch vs corrected rate")
+```
+
+```{r zerofill-guessing}
+guess_share <- sre |>
+  group_by(dataset, run_id) |>
+  summarise(pct_fast = mean(rt_s < 1), .groups = "drop")
+
+zf_first |>
+  inner_join(guess_share, by = c("dataset", "run_id")) |>
+  group_by(dataset_label) |>
+  summarise(n = n(),
+            r_rate_fastguess = cor(score_new, pct_fast),
+            r_zerofill_fastguess = cor(zf_z, pct_fast), .groups = "drop") |>
+  knitr::kable(digits = 2,
+               caption = "Correlation of each score with a run's fast-guess share (RT < 1 s). Positive = the score REWARDS guessing")
+```
+
+Where behavior is clean, zero-fill is essentially the rate score by another
+route: r = .94 with the corrected rate in Germany, near-identical validity
+there, and Bogotá 16-month stability a statistical tie (.72 vs .72). But it
+has **no guessing correction**: a fast guesser converts wasted trials into
+lucky 1s among the zeros, so the score correlates **positively** with a
+run's fast-guess share (+.46 in rural Colombia) where the rate score
+correlates negatively (−.42), and validity collapses exactly there (rural
+PA r = .27 vs .57; rural age .19 vs .42).
+
+The obvious repair — a fixed 2AFC guessing floor (Rasch with g = .5, as in
+the LEVANTE multiple-choice models) — **backfires**: unreached items are
+*structural* zeros, and whole-bank accuracy (~10% for a typical run) sits
+far below any g = .5 floor, so the model cannot represent the data (EM
+fails to converge; validity collapses everywhere, e.g. rural age r = .08).
+The floor is right for "attempted and guessed," wrong for "never reached."
+A repaired variant would need a different treatment of the two zero types —
+at which point the model is no longer the simple suggestion, and the rate
+score already does the job.
+
 ## Proof of concept: EZ-diffusion per run
 
 The EZ-diffusion model (Wagenmakers, van der Maas, & Grasman, 2007) inverts
@@ -744,18 +831,18 @@ stability ticks up (.70 → .72). So the correction is about **fairness of
 individual scores** (especially any longitudinal use of the Canadian data),
 not about rescuing aggregate structure — which was already fine.
 
-**3. Efficiency modeling: a three-rung ladder, and the rate score wins every
-rung.** All three model-based alternatives produce person scores correlating
-r ≈ .85–.90 with the corrected rate score — and all three are *less* valid
-and *less* stable where they differ. On the most demanding criterion,
-Bogotá 16-month rank-order stability:
+**3. Efficiency modeling: a four-rung ladder, and the rate score wins every
+rung.** Every model-based alternative is less valid and/or less stable than
+the corrected rate score where they differ. On the most demanding
+criterion, Bogotá 16-month rank-order stability:
 
-| score | stability |
-|---|---|
-| corrected rate (C − I per 180 s) | **.72** |
-| hierarchical SA composite (θ + τ) | .68 |
-| **diffusion-IRT drift** (full Wiener, item REs) | .56 |
-| EZ-diffusion drift (no items) | .44 |
+| score | stability | fatal flaw elsewhere |
+|---|---|---|
+| corrected rate (C − I per 180 s) | **.72** | — |
+| zero-filled Rasch (ROAR suggestion) | .72 | rewards guessing (r = **+.46** with fast-guess share in rural CO vs −.42 for rate; PA validity .27 vs .57) |
+| hierarchical SA composite (θ + τ) | .68 | speed dimension means different things by site |
+| diffusion-IRT drift (full Wiener, item REs) | .56 | discards stable pacing/caution variance |
+| EZ-diffusion drift (no items) | .44 | all of the above, plus no item structure |
 
 Item structure is not the missing ingredient: the full diffusion-IRT fit
 recovers sensible item parameters (item drift effects correlate .52 with
