@@ -1,0 +1,807 @@
+---
+title: "ROAR-Sentence (SRE) — scoring deepdive"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 9
+    fig-height: 5
+execute:
+  warning: false
+  message: false
+---
+
+# Scope
+
+**Sentence Reading Efficiency (SRE)** is a speeded literacy measure adapted
+from ROAR ([intro-sre](https://roar.stanford.edu/technical/intro-sre.html);
+Yeatman et al., 2024). Children read simple sentences one at a time and judge
+each *true* or *false* (2AFC), reading as many as they can in **180 seconds**.
+ROAR's official score is **correct − incorrect** within the time window — the
+subtraction is a guessing correction (a random guesser nets ≈ 0). LEVANTE
+z-scores this count within dataset so it sits on a roughly comparable scale to
+the IRT tasks (`score_type = "guessing_adjusted_number_correct_scaled"`).
+
+**The scoring bug.** `levantemodels::score_sre()` computes
+`filter(trial_number <= 180)` then `(sum(correct) - sum(!correct)) / 180` —
+i.e. it truncates at the first 180 **trials**, not 180 **seconds**. (The
+`/180` divisor is cosmetic: it cancels in the z-score.) This notebook asks:
+
+1. **Timing forensics**: do runs actually last 180 seconds? (Spoiler: no —
+   there is real structure here, including double-length runs.)
+2. **Corrected scoring**: rate-normalize to a per-180s net-correct rate. How
+   much do scores change? Do age / ROAR-Phoneme (PA) / ROAR-Word (SWR)
+   correlations change, within and across sites?
+3. **Efficiency scoring**: discussion of correctness+RT models
+   (drift-diffusion IRT and alternatives) plus an EZ-diffusion proof of
+   concept on the trial data.
+
+Data: **`levante_data_pilots_hackathon:fpx0:v1_1`** via the new `levante`
+package, cached by [`tasks/_pull_sre_hackathon.R`](\_pull_sre_hackathon.R).
+
+```{r setup}
+source(here::here("common.R"))
+
+trials_file <- here("data/hackathon_v1_1_trials_roar.rds")
+if (!file.exists(trials_file))
+  stop("Run tasks/_pull_sre_hackathon.R first (requires Redivis auth).")
+
+tr_all <- read_rds(trials_file)
+sc_all <- read_rds(here("data/hackathon_v1_1_scores.rds"))
+
+dataset_pal <- set_names(
+  RColorBrewer::brewer.pal(4, "Set1"),
+  dataset_labels_named[c("pilot_uniandes_co_bogota", "pilot_uniandes_co_rural",
+                         "pilot_mpieva_de_main", "pilot_western_ca_main")])
+
+label_dataset <- \(df) df |>
+  mutate(dataset_label = factor(dataset_labels_named[dataset],
+                                levels = names(dataset_pal)))
+
+sre <- tr_all |>
+  filter(task_id == "sre") |>
+  mutate(correct = as.logical(correct),
+         rt_s = rt_numeric / 1000,
+         corpus = sub("_[0-9]+$", "", item_uid) |> str_remove("^sre_")) |>
+  label_dataset()
+
+sre_scores_pub <- sc_all |>
+  filter(task_id == "sre", !is.na(score)) |>
+  label_dataset()
+```
+
+```{r data-counts}
+sre |>
+  group_by(dataset_label) |>
+  summarise(runs = n_distinct(run_id), children = n_distinct(user_id),
+            trials = n(), .groups = "drop") |>
+  knitr::kable(caption = "SRE trial data by dataset (hackathon v1_1)")
+```
+
+# 1. Timing forensics: is 180 seconds always 180 seconds?
+
+Two per-run duration measures: **time-on-sentences** (cumulative RT — the
+task records per-sentence RT in ms) and **wall-clock span** (last minus first
+trial server timestamp). Neither is exactly the timer, but they bracket it:
+cumulative RT omits inter-trial overhead; timestamp span omits the first
+trial's duration and can inflate under server lag or pauses.
+
+```{r durations}
+run_time <- sre |>
+  group_by(dataset, dataset_label, run_id, user_id) |>
+  summarise(n_trials = n(),
+            n_corpora = n_distinct(corpus),
+            cum_rt = sum(rt_s),
+            span = as.numeric(difftime(max(timestamp), min(timestamp),
+                                       units = "secs")),
+            n_correct = sum(correct), n_incorrect = sum(!correct),
+            .groups = "drop")
+
+run_time |>
+  group_by(dataset_label) |>
+  summarise(across(c(cum_rt, span),
+                   list(q05 = ~quantile(.x, .05), median = median,
+                        q95 = ~quantile(.x, .95), max = max)),
+            .groups = "drop") |>
+  knitr::kable(digits = 0,
+               caption = "Per-run duration (seconds): cumulative RT and wall-clock span")
+```
+
+```{r duration-hist, fig.height=4}
+run_time |>
+  ggplot(aes(x = cum_rt, fill = dataset_label)) +
+  facet_wrap(vars(dataset_label), scales = "free_y") +
+  geom_histogram(binwidth = 10, boundary = 0, show.legend = FALSE) +
+  geom_vline(xintercept = 180, lty = 2) +
+  scale_fill_manual(values = dataset_pal) +
+  labs(x = "Cumulative RT per run (s)", y = "Runs",
+       title = "Most runs sum to just under 180 s of reading time",
+       subtitle = "Dashed line = nominal 180 s deadline. Note the Canadian runs near 330 s.")
+```
+
+Three regularities:
+
+- **The 180 s deadline is real but not exact.** Median time-on-sentences is
+  ~160–165 s (the remainder is inter-trial overhead: wall-clock span medians
+  ~180 s). So the timer fires on schedule for most runs.
+- **A left tail of short runs exists everywhere** — Colombia especially (rural
+  5th percentile ≈ 87 s of reading time). Under the current rule these
+  short runs are scored as if the child had the full window.
+- **Canada (Western) has genuinely double-length runs.**
+
+## Block structure: some Canadian runs contain two 180-s blocks
+
+The item bank prefix identifies sentence corpora. Colombia interleaves three
+corpora (`spanish_lab`, `spanish_ai`, `spanish_ai-human`) *within one timed
+block*; Germany uses one corpus (`uzh`). But 20 Canadian runs contain **two
+sequential blocks** (`lab` sentences, then `ai` sentences), each with its own
+~180-s window — roughly 360 s of testing scored as if it were one window.
+
+```{r blocks}
+run_blocks <- sre |>
+  group_by(dataset_label, run_id, corpus) |>
+  summarise(block_rt = sum(rt_s), n = n(), .groups = "drop_last") |>
+  summarise(blocks = paste(sort(corpus), collapse = " + "),
+            two_windows = sum(block_rt > 120) >= 2,
+            .groups = "drop")
+
+run_blocks |>
+  count(dataset_label, blocks, two_windows) |>
+  arrange(dataset_label, desc(n)) |>
+  knitr::kable(caption = "Corpus composition of runs. two_windows = ≥2 corpora each with >120 s of reading time (sequential blocks, not interleaving)")
+```
+
+```{r trials-per-run, fig.height=4}
+run_time |>
+  ggplot(aes(x = n_trials, fill = dataset_label)) +
+  facet_wrap(vars(dataset_label), scales = "free_y") +
+  geom_histogram(binwidth = 10, boundary = 0, show.legend = FALSE) +
+  geom_vline(xintercept = 180, lty = 2) +
+  scale_fill_manual(values = dataset_pal) +
+  labs(x = "Trials per run", y = "Runs",
+       title = "Only Canada ever reaches the 180-trial truncation point",
+       subtitle = "Dashed line = the current rule's truncation at 180 trials")
+```
+
+**Side-quest verdict:** the first-180-*trials* filter is a no-op for Germany
+and Colombia (no run exceeds 180 trials — max 140). It bites only in Canada
+(`r sum(run_time$n_trials > 180)` runs exceed 180 trials, max
+`r max(run_time$n_trials)`), and there it truncates arbitrarily *across* the
+two-block structure. Meanwhile the actual problem is the reverse: **effective
+testing time varies from ~1 to ~4 minutes across runs**, and a raw count
+treats them all as equal.
+
+# 2. Corrected scoring: rate normalization
+
+The corrected score is a **rate**: net correct per 180 s of reading time,
+
+$$\text{score} = \frac{C - I}{\text{cumulative RT (s)}} \times 180,$$
+
+then z-scored within dataset (preserving the pipeline's scaling convention).
+We use time-on-sentences rather than wall-clock span as the denominator
+because it is robust to server-timestamp lag and pauses; the two agree
+closely (sensitivity check below). Runs with under 30 s of reading time are
+excluded from rate scoring (extrapolation too aggressive).
+
+First, verify we can reproduce the published (buggy) scores exactly:
+
+```{r replicate-published}
+old_score <- sre |>
+  group_by(dataset, run_id) |>
+  filter(trial_number <= 180) |>
+  summarise(net = sum(correct) - sum(!correct), .groups = "drop") |>
+  group_by(dataset) |>
+  mutate(score_old = scale(net)[, 1]) |>
+  ungroup()
+
+old_score |>
+  inner_join(sre_scores_pub, by = c("dataset", "run_id")) |>
+  group_by(dataset_label) |>
+  summarise(n = n(), r_with_published = cor(score_old, score), .groups = "drop") |>
+  knitr::kable(digits = 3,
+               caption = "Local reimplementation of the current rule vs published scores (r ≈ 1; residual differences come from a few scored runs with no rows in the trials table, which shift the z-scale slightly)")
+```
+
+```{r corrected-score}
+min_time <- 30
+
+new_score <- run_time |>
+  filter(cum_rt >= min_time) |>
+  mutate(rate = (n_correct - n_incorrect) / cum_rt * 180) |>
+  group_by(dataset) |>
+  mutate(score_new = scale(rate)[, 1]) |>
+  ungroup()
+
+scores_cmp <- new_score |>
+  inner_join(old_score |> select(dataset, run_id, net, score_old),
+             by = c("dataset", "run_id")) |>
+  left_join(sre_scores_pub |> select(dataset, run_id, age),
+            by = c("dataset", "run_id"))
+```
+
+Excluded by the 30-s floor: `r nrow(run_time) - nrow(new_score)` runs.
+
+## A) How much do scores change?
+
+```{r old-vs-new, fig.height=4.5}
+cors <- scores_cmp |>
+  group_by(dataset_label) |>
+  summarise(n = n(), r = cor(score_old, score_new),
+            r_spearman = cor(score_old, score_new, method = "spearman"),
+            mean_abs_change = mean(abs(score_new - score_old)),
+            max_abs_change = max(abs(score_new - score_old)),
+            .groups = "drop")
+
+knitr::kable(cors, digits = 2,
+             caption = "Current (first-180-trials) vs corrected (rate per 180 s) z-scores")
+
+scores_cmp |>
+  ggplot(aes(x = score_old, y = score_new, color = dataset_label)) +
+  facet_wrap(vars(dataset_label)) +
+  geom_abline(lty = 3, color = "grey60") +
+  geom_point(alpha = 0.4, size = 0.8, show.legend = FALSE) +
+  scale_color_manual(values = dataset_pal) +
+  labs(x = "Current score (z)", y = "Corrected rate score (z)",
+       title = "Current vs corrected SRE scores")
+```
+
+```{r movers}
+scores_cmp |>
+  mutate(change = score_new - score_old) |>
+  slice_max(abs(change), n = 10) |>
+  select(dataset_label, run_id, n_trials, cum_rt, n_correct, n_incorrect,
+         score_old, score_new, change) |>
+  knitr::kable(digits = 2, caption = "Largest score changes under rate normalization")
+```
+
+```{r change-vs-time, fig.height=4}
+scores_cmp |>
+  mutate(change = score_new - score_old) |>
+  ggplot(aes(x = cum_rt, y = change, color = dataset_label)) +
+  geom_hline(yintercept = 0, lty = 3) +
+  geom_vline(xintercept = 180, lty = 2, color = "grey60") +
+  geom_point(alpha = 0.5, size = 0.9) +
+  scale_color_manual(values = dataset_pal, name = NULL) +
+  labs(x = "Cumulative RT per run (s)", y = "Corrected − current (z)",
+       title = "Who moves: short runs move up, double-length runs move down") +
+  theme(legend.position = "bottom")
+```
+
+## B) Validity correlations, current vs corrected
+
+Within each dataset: correlations of SRE with age, ROAR-Phoneme (θ), and
+ROAR-Word (θ). Cross-run joins take each child's first run per task.
+
+```{r validity}
+first_run <- \(df) df |>
+  group_by(dataset, user_id) |>
+  arrange(time_started) |>
+  slice(1) |>
+  ungroup()
+
+pa_swr <- sc_all |>
+  filter(task_id %in% c("pa", "swr"), !is.na(score)) |>
+  first_run() |>
+  select(dataset, user_id, task_id, other = score) |>
+  pivot_wider(names_from = task_id, values_from = other)
+
+sre_first <- sre_scores_pub |>
+  first_run() |>
+  select(dataset, dataset_label, user_id, run_id, age) |>
+  inner_join(scores_cmp |> select(dataset, run_id, score_old, score_new),
+             by = c("dataset", "run_id")) |>
+  left_join(pa_swr, by = c("dataset", "user_id"))
+
+validity <- sre_first |>
+  pivot_longer(c(age, pa, swr), names_to = "criterion", values_to = "crit") |>
+  filter(!is.na(crit)) |>
+  group_by(dataset_label, criterion) |>
+  filter(n() >= 20) |>
+  summarise(n = n(),
+            r_current = cor(score_old, crit),
+            r_corrected = cor(score_new, crit), .groups = "drop") |>
+  mutate(delta = r_corrected - r_current)
+
+knitr::kable(validity, digits = 2,
+             caption = "SRE validity correlations within dataset, current vs corrected scoring")
+```
+
+```{r validity-pooled}
+pooled <- sre_first |>
+  pivot_longer(c(age, pa, swr), names_to = "criterion", values_to = "crit") |>
+  filter(!is.na(crit)) |>
+  group_by(criterion) |>
+  summarise(n = n(),
+            r_current = cor(score_old, crit),
+            r_corrected = cor(score_new, crit), .groups = "drop") |>
+  mutate(delta = r_corrected - r_current)
+
+knitr::kable(pooled, digits = 2,
+             caption = "Pooled across datasets (all scores z-scaled within dataset; PA/SWR θ are by-language, so pooled r mixes calibrations — interpret within-site values first)")
+```
+
+## Longitudinal stability (Bogotá, ~16-month gap)
+
+Bogotá has ~180 children with SRE at two waves. Rank-order stability across
+16 months is a demanding criterion: a better score should preserve more
+true-score variance.
+
+```{r stability}
+stab <- sre_scores_pub |>
+  filter(dataset == "pilot_uniandes_co_bogota") |>
+  inner_join(scores_cmp |> select(dataset, run_id, score_old, score_new),
+             by = c("dataset", "run_id")) |>
+  group_by(user_id) |>
+  filter(n() >= 2) |>
+  arrange(time_started) |>
+  summarise(gap_days = as.numeric(difftime(time_started[2], time_started[1],
+                                           units = "days")),
+            across(c(score_old, score_new), list(t1 = ~.x[1], t2 = ~.x[2])),
+            .groups = "drop") |>
+  filter(gap_days > 300)
+
+tibble(
+  n_pairs = nrow(stab),
+  median_gap_months = round(median(stab$gap_days) / 30.4, 1),
+  stability_current = cor(stab$score_old_t1, stab$score_old_t2),
+  stability_corrected = cor(stab$score_new_t1, stab$score_new_t2)
+) |>
+  knitr::kable(digits = 2, caption = "16-month rank-order stability, current vs corrected")
+```
+
+## Sensitivity: denominator choice
+
+```{r denominator-sensitivity}
+sens <- run_time |>
+  filter(cum_rt >= min_time, span >= min_time) |>
+  mutate(rate_rt = (n_correct - n_incorrect) / cum_rt * 180,
+         rate_span = (n_correct - n_incorrect) / span * 180) |>
+  group_by(dataset_label) |>
+  summarise(n = n(), r_rt_vs_span = cor(rate_rt, rate_span), .groups = "drop")
+
+knitr::kable(sens, digits = 3,
+             caption = "Rate via cumulative RT vs via wall-clock span")
+```
+
+# 3. Fast guessing: the bridge to model-based scoring
+
+The `C − I` correction neutralizes guessing *in expectation* (a guesser nets
+≈ 0), but guessing still costs signal: guessed trials burn testing time and
+add noise. And guessing is far from uniform across sites:
+
+```{r fast-guessing, fig.height=4}
+sre |>
+  mutate(rt_bin = cut(rt_s, c(0, .5, 1, 2, 4, 8, 16, Inf))) |>
+  group_by(dataset_label, rt_bin) |>
+  summarise(accuracy = mean(correct), pct = n(), .groups = "drop_last") |>
+  mutate(pct = pct / sum(pct)) |>
+  ungroup() |>
+  ggplot(aes(x = rt_bin, y = accuracy, color = dataset_label,
+             group = dataset_label)) +
+  geom_hline(yintercept = 0.5, lty = 3) +
+  geom_line() +
+  geom_point(aes(size = pct), alpha = 0.7) +
+  scale_color_manual(values = dataset_pal, name = NULL) +
+  scale_size_area(max_size = 6, guide = "none") +
+  labs(x = "RT (s)", y = "Accuracy",
+       title = "Sub-second responses are at chance — and their prevalence varies hugely by site",
+       subtitle = "Point size ∝ share of site's trials in that RT bin; dotted line = 2AFC chance") +
+  theme(legend.position = "bottom")
+```
+
+```{r guessing-table}
+sre |>
+  group_by(dataset_label) |>
+  summarise(pct_rt_under_1s = mean(rt_s < 1),
+            acc_under_1s = mean(correct[rt_s < 1]),
+            acc_over_1s = mean(correct[rt_s >= 1]), .groups = "drop") |>
+  knitr::kable(digits = 2, caption = "Fast-guessing prevalence by dataset")
+```
+
+This is a strong argument for scoring models that use the joint
+(correct, RT) signal per trial, rather than counts alone.
+
+# 4. Toward an efficiency score from correctness + RT
+
+## The modeling landscape
+
+SRE's design — self-paced 2AFC trials under a global deadline, with
+per-trial RT and accuracy — admits several principled treatments:
+
+1. **Rate normalization (implemented above).** Minimal fix: net correct per
+   unit time. Already a speed–accuracy composite; requires no model. Its
+   weakness: it treats a slow-and-accurate child and a fast-and-sloppy child
+   with equal net rates as identical, and fast guessing adds noise it can
+   only average over.
+
+2. **Count models (Rasch Poisson counts / offset-Poisson GLMM).** The
+   classical psychometrics of speed tests (Rasch, 1960): model the *count* of
+   correct responses with a log link and `offset(log(time))`, giving each
+   child a latent log-rate; corpus/site enter as fixed effects, children as
+   random effects. This is rate normalization done as a measurement model —
+   it handles varying time windows natively and yields standard errors. It
+   still ignores per-trial RT structure.
+
+3. **Diffusion IRT (van der Maas et al., 2011; Molenaar et al., 2015;
+   `diffIRT`, or GLMM approximations).** Each trial's (choice, RT) is a
+   Wiener first-passage process; person drift rate $v$ *is* reading
+   efficiency, boundary separation $a$ is caution, $T_{er}$ is encoding/motor
+   time. Items get drift/boundary loadings. This cleanly separates ability
+   from speed–accuracy tradeoff and soaks up fast guesses (they are
+   low-drift/low-boundary behavior, not ability). Cost: heavy estimation;
+   item-level calibration needs coverage (fine in Colombia at ~60–80 runs per
+   item; thin in Canada at ~9).
+
+4. **Hierarchical speed–accuracy models (van der Linden, 2007).** Separate
+   IRT model for accuracy and lognormal model for RT, with correlated person
+   ability θ and speed τ. Less mechanistic than the diffusion model; scales
+   well; efficiency is a composite of θ and τ.
+
+5. **Signed residual time scoring (Maris & van der Maas, 2012).** Score
+   $(2x - 1)(d - t)$ per item — correct-and-fast is best, wrong-and-fast is
+   worst. Elegant and provably optimal under a specific IRT model, but it
+   assumes a *per-item* deadline $d$; SRE has only a global deadline, so $d$
+   would be an arbitrary pseudo-deadline. Not a natural fit.
+
+## Proof of concept: EZ-diffusion per run
+
+The EZ-diffusion model (Wagenmakers, van der Maas, & Grasman, 2007) inverts
+the simple diffusion model from three per-person summary statistics
+(accuracy, mean and variance of correct RTs) — no item structure, no
+iterative fitting. It is the cheapest possible test of whether
+diffusion-style decomposition adds validity beyond the rate score.
+
+```{r ez}
+ez_diffusion <- function(pc, vrt, mrt, s = 0.1) {
+  s2 <- s^2
+  L <- qlogis(pc)
+  x <- L * (L * pc^2 - L * pc + pc - 0.5) / vrt
+  v <- sign(pc - 0.5) * s * x^(1 / 4)
+  a <- s2 * L / v
+  y <- -v * a / s2
+  mdt <- (a / (2 * v)) * (1 - exp(y)) / (1 + exp(y))
+  tibble(drift = v, boundary = a, ter = mrt - mdt)
+}
+
+ez_run <- sre |>
+  filter(rt_s >= 0.25, rt_s <= 30) |>
+  group_by(dataset, dataset_label, run_id, user_id) |>
+  filter(n() >= 15, sum(correct) >= 10) |>
+  summarise(n = n(), pc_raw = mean(correct),
+            mrt = mean(rt_s[correct]), vrt = var(rt_s[correct]),
+            .groups = "drop") |>
+  # edge-correct accuracy away from 0.5 and 1
+  mutate(pc = pmin(pmax(pc_raw, 0.5 + 1 / (2 * n)), 1 - 1 / (2 * n)))
+
+ez_run <- bind_cols(ez_run, ez_diffusion(ez_run$pc, ez_run$vrt, ez_run$mrt))
+
+ez_run |>
+  group_by(dataset_label) |>
+  summarise(n_runs = n(), across(c(drift, boundary, ter), median),
+            .groups = "drop") |>
+  knitr::kable(digits = 2, caption = "Median EZ-diffusion parameters by dataset")
+```
+
+```{r ez-validity}
+ez_first <- sre_first |>
+  inner_join(ez_run |> select(dataset, run_id, drift, boundary, ter),
+             by = c("dataset", "run_id"))
+
+ez_validity <- ez_first |>
+  pivot_longer(c(age, pa, swr), names_to = "criterion", values_to = "crit") |>
+  filter(!is.na(crit)) |>
+  group_by(dataset_label, criterion) |>
+  filter(n() >= 20) |>
+  summarise(n = n(),
+            r_corrected_rate = cor(score_new, crit),
+            r_drift = cor(drift, crit),
+            r_boundary = cor(boundary, crit), .groups = "drop")
+
+knitr::kable(ez_validity, digits = 2,
+             caption = "EZ drift vs corrected rate score: validity correlations")
+```
+
+```{r ez-stability}
+ez_stab <- sre_scores_pub |>
+  filter(dataset == "pilot_uniandes_co_bogota") |>
+  inner_join(ez_run |> select(dataset, run_id, drift),
+             by = c("dataset", "run_id")) |>
+  inner_join(scores_cmp |> select(dataset, run_id, score_new),
+             by = c("dataset", "run_id")) |>
+  group_by(user_id) |>
+  filter(n() >= 2) |>
+  arrange(time_started) |>
+  summarise(gap = as.numeric(difftime(time_started[2], time_started[1],
+                                      units = "days")),
+            drift_t1 = drift[1], drift_t2 = drift[2],
+            rate_t1 = score_new[1], rate_t2 = score_new[2], .groups = "drop") |>
+  filter(gap > 300)
+
+tibble(n_pairs = nrow(ez_stab),
+       stability_rate = cor(ez_stab$rate_t1, ez_stab$rate_t2),
+       stability_drift = cor(ez_stab$drift_t1, ez_stab$drift_t2)) |>
+  knitr::kable(digits = 2,
+               caption = "Bogotá 16-month stability: corrected rate vs EZ drift")
+```
+
+```{r ez-scatter, fig.height=4.5}
+ez_first |>
+  ggplot(aes(x = score_new, y = drift, color = dataset_label)) +
+  facet_wrap(vars(dataset_label), scales = "free_y") +
+  geom_point(alpha = 0.4, size = 0.8, show.legend = FALSE) +
+  scale_color_manual(values = dataset_pal) +
+  labs(x = "Corrected rate score (z)", y = "EZ drift rate v",
+       title = "EZ drift vs the corrected rate score")
+```
+
+## Hierarchical speed–accuracy model (van der Linden 2007 style)
+
+The next rung up from EZ: model accuracy and RT jointly but *separately*,
+with crossed run × item random effects (fit by
+[`_fit_sre_hierarchical_sa.R`](\_fit_sre_hierarchical_sa.R)):
+
+- accuracy: `correct ~ 0 + dataset + (1|run_id) + (1|item_uid)` (logit GLMM)
+  → run-level **ability θ**, with item easiness absorbed by item effects
+  (the "IRT part" that EZ lacks);
+- speed: `log(rt) ~ 0 + dataset + (1|run_id) + (1|item_uid)` (lognormal LMM)
+  → run-level **speed τ** (sign-flipped RT effect), with item
+  time-intensities absorbed.
+
+An efficiency composite is z(θ) + z(τ), standardized within dataset.
+
+```{r sa-load}
+sa_file <- here("data/sre_sa_estimates.rds")
+sa <- read_rds(sa_file)
+
+sa_run <- sa$run |>
+  group_by(dataset) |>
+  mutate(theta_z = scale(theta)[, 1], tau_z = scale(tau)[, 1],
+         eff = scale(theta_z + tau_z)[, 1]) |>
+  ungroup()
+
+sa_run |>
+  label_dataset() |>
+  group_by(dataset_label) |>
+  summarise(n_runs = n(), r_theta_tau = cor(theta, tau), .groups = "drop") |>
+  knitr::kable(digits = 2,
+               caption = "Ability–speed correlation by dataset: near zero in DE/Canada, strongly NEGATIVE in rural Colombia — 'fast' there mostly means guessing")
+```
+
+```{r sa-validity}
+sa_first <- sre_first |>
+  inner_join(sa_run |> select(dataset, run_id, theta_z, tau_z, eff),
+             by = c("dataset", "run_id"))
+
+sa_first |>
+  pivot_longer(c(age, pa, swr), names_to = "criterion", values_to = "crit") |>
+  filter(!is.na(crit)) |>
+  group_by(dataset_label, criterion) |>
+  filter(n() >= 20) |>
+  summarise(n = n(),
+            r_rate = cor(score_new, crit),
+            r_theta = cor(theta_z, crit),
+            r_tau = cor(tau_z, crit),
+            r_composite = cor(eff, crit), .groups = "drop") |>
+  knitr::kable(digits = 2,
+               caption = "Hierarchical SA model vs corrected rate score: validity")
+```
+
+```{r sa-stability}
+sa_stab <- sre_scores_pub |>
+  filter(dataset == "pilot_uniandes_co_bogota") |>
+  inner_join(sa_run |> select(dataset, run_id, theta_z, tau_z, eff),
+             by = c("dataset", "run_id")) |>
+  inner_join(scores_cmp |> select(dataset, run_id, score_new),
+             by = c("dataset", "run_id")) |>
+  group_by(user_id) |>
+  filter(n() >= 2) |>
+  arrange(time_started) |>
+  summarise(gap = as.numeric(difftime(time_started[2], time_started[1],
+                                      units = "days")),
+            across(c(theta_z, tau_z, eff, score_new),
+                   list(t1 = ~.x[1], t2 = ~.x[2])), .groups = "drop") |>
+  filter(gap > 300)
+
+tibble(n_pairs = nrow(sa_stab),
+       rate = cor(sa_stab$score_new_t1, sa_stab$score_new_t2),
+       theta = cor(sa_stab$theta_z_t1, sa_stab$theta_z_t2),
+       tau = cor(sa_stab$tau_z_t1, sa_stab$tau_z_t2),
+       composite = cor(sa_stab$eff_t1, sa_stab$eff_t2)) |>
+  knitr::kable(digits = 2,
+               caption = "Bogotá 16-month stability: SA-model scores vs corrected rate")
+```
+
+The decomposition is diagnostic gold but scoring lead. The ability–speed
+correlation flips sign across sites (≈ 0 in DE/Canada, −.23 Bogotá, **−.52
+rural CO**): where fast guessing is common, the "speed" dimension is
+contaminated by disengagement, so neither τ nor any fixed θ+τ composite
+travels across sites. The composite matches the rate score where behavior is
+clean (r ≈ .9 in DE/Canada) and underperforms it where it isn't (rural age
+validity .28 vs .42; Bogotá stability .68 vs .72).
+
+## Diffusion IRT (pooled brms Wiener model)
+
+The full model: every trial's (choice, RT) as a Wiener process, with
+dataset fixed effects plus run *and item* random effects on drift (the IRT
+part), run effects on boundary separation and non-decision time, bias fixed
+at .5 (~64k trials; item banks are disjoint across sites, so sites are
+linked by priors, not anchors). Prototyped locally with brms
+([`_fit_sre_ddm.R`](\_fit_sre_ddm.R)), then exported to raw Stan
+([`_export_sre_ddm_stan.R`](\_export_sre_ddm_stan.R)) and fit on Sherlock
+([`sherlock_sre_ddm/`](sherlock_sre_ddm/); 24 cores, 9.5 h, 4 × 500/500).
+Drift-side parameters converged acceptably (R̂ ≤ 1.06); the run-level
+non-decision-time hierarchy mixed poorly (R̂ ≈ 1.6) — a known fragility of
+ndt under a hard global deadline — which cautions against interpreting the
+ndt estimates but leaves the drift comparison intact.
+
+```{r ddm-load}
+ddm_file <- here("data/sre_ddm_estimates.rds")
+has_ddm <- file.exists(ddm_file)
+```
+
+```{r ddm-results, eval=has_ddm}
+ddm <- read_rds(ddm_file)
+
+ddm_run <- ddm$run |>
+  group_by(dataset) |>
+  mutate(drift_z = scale(drift_re)[, 1]) |>
+  ungroup()
+
+ddm_first <- sre_first |>
+  inner_join(ddm_run |> select(dataset, run_id, drift_z, bs_re, ndt_re),
+             by = c("dataset", "run_id"))
+
+ddm_first |>
+  pivot_longer(c(age, pa, swr), names_to = "criterion", values_to = "crit") |>
+  filter(!is.na(crit)) |>
+  group_by(dataset_label, criterion) |>
+  filter(n() >= 20) |>
+  summarise(n = n(),
+            r_rate = cor(score_new, crit),
+            r_drift = cor(drift_z, crit),
+            r_boundary = cor(bs_re, crit), .groups = "drop") |>
+  knitr::kable(digits = 2,
+               caption = "Diffusion IRT drift vs corrected rate score: validity")
+```
+
+```{r ddm-stability, eval=has_ddm}
+ddm_stab <- sre_scores_pub |>
+  filter(dataset == "pilot_uniandes_co_bogota") |>
+  inner_join(ddm_run |> select(dataset, run_id, drift_z),
+             by = c("dataset", "run_id")) |>
+  inner_join(scores_cmp |> select(dataset, run_id, score_new),
+             by = c("dataset", "run_id")) |>
+  group_by(user_id) |>
+  filter(n() >= 2) |>
+  arrange(time_started) |>
+  summarise(gap = as.numeric(difftime(time_started[2], time_started[1],
+                                      units = "days")),
+            across(c(drift_z, score_new), list(t1 = ~.x[1], t2 = ~.x[2])),
+            .groups = "drop") |>
+  filter(gap > 300)
+
+tibble(n_pairs = nrow(ddm_stab),
+       rate = cor(ddm_stab$score_new_t1, ddm_stab$score_new_t2),
+       ddm_drift = cor(ddm_stab$drift_z_t1, ddm_stab$drift_z_t2)) |>
+  knitr::kable(digits = 2,
+               caption = "Bogotá 16-month stability: diffusion-IRT drift vs corrected rate")
+```
+
+```{r ddm-corr, eval=has_ddm, fig.height=4.5}
+ddm_first |>
+  ggplot(aes(x = score_new, y = drift_z, color = dataset_label)) +
+  facet_wrap(vars(dataset_label)) +
+  geom_point(alpha = 0.4, size = 0.8, show.legend = FALSE) +
+  scale_color_manual(values = dataset_pal) +
+  labs(x = "Corrected rate score (z)", y = "DDM-IRT drift (z)",
+       title = "Diffusion-IRT drift vs the corrected rate score")
+```
+
+The item side of the model behaves exactly as an IRT model should — item
+drift effects track empirical item accuracy and (negatively) item RT:
+
+```{r ddm-items, eval=has_ddm, fig.height=4}
+item_emp <- sre |>
+  group_by(item_uid) |>
+  summarise(accuracy = mean(correct), median_rt = median(rt_s), n = n(),
+            .groups = "drop") |>
+  filter(n >= 20)
+
+ddm$item |>
+  inner_join(item_emp, by = "item_uid") |>
+  ggplot(aes(x = drift_re, y = accuracy)) +
+  geom_point(alpha = 0.3, size = 0.8) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(x = "Item drift effect (logit-ish)", y = "Empirical item accuracy",
+       title = "The IRT part works: item drift effects track item difficulty")
+```
+
+So the item-level structure that EZ lacked is genuinely recovered here — and
+person-level drift *still* underperforms the rate score where they differ.
+That localizes the problem: it is not missing item information, it is that
+the diffusion decomposition discards stable, valid between-child variance in
+*time allocation* (caution, pacing) that the rate score keeps.
+
+# Verdict
+
+**1. The timer is mostly honest, but the trial-count rule was aimed at the
+wrong problem.** The first-180-*trials* filter is a no-op in Germany and
+Colombia (max 140 trials/run) and bites only in Canada. The real
+heterogeneity is in *time*: 20 Canadian runs contain two sequential ~180-s
+blocks (~360 s of testing scored as one window), and there is a left tail of
+short runs everywhere (rural Colombia 5th percentile ≈ 87 s of reading time)
+that the current rule scores as if they had the full window.
+
+**2. Rate normalization changes little in aggregate, a lot for specific
+kids.** Corrected-vs-current r ≈ .997 (DE), .975–.978 (CO), but **.82 in
+Canada** (mean |Δ| = 0.45 z there; the double-block runs drop, short runs
+rise). Validity correlations with age/PA/SWR move by |Δr| ≤ .03 everywhere
+except Canadian age validity, which improves (.32 → .39); Bogotá 16-month
+stability ticks up (.70 → .72). So the correction is about **fairness of
+individual scores** (especially any longitudinal use of the Canadian data),
+not about rescuing aggregate structure — which was already fine.
+
+**3. Efficiency modeling: a three-rung ladder, and the rate score wins every
+rung.** All three model-based alternatives produce person scores correlating
+r ≈ .85–.90 with the corrected rate score — and all three are *less* valid
+and *less* stable where they differ. On the most demanding criterion,
+Bogotá 16-month rank-order stability:
+
+| score | stability |
+|---|---|
+| corrected rate (C − I per 180 s) | **.72** |
+| hierarchical SA composite (θ + τ) | .68 |
+| **diffusion-IRT drift** (full Wiener, item REs) | .56 |
+| EZ-diffusion drift (no items) | .44 |
+
+Item structure is not the missing ingredient: the full diffusion-IRT fit
+recovers sensible item parameters (item drift effects correlate .52 with
+item accuracy, −.69 with item median RT) and item information lifts drift
+stability from .44 (EZ) to .56 — but still far short of .72. Validity tells
+the same story (e.g. Bogotá age r: rate .60, DDM drift .53; DE age: .54 vs
+.44), with only scattered small wins for model-based scores (DE SWR: DDM
+.62 vs rate .58). The diagnosis: SRE's net rate *is* the behaviorally
+meaningful quantity — it bundles decision efficiency **and** stable
+individual differences in pacing/caution, and every decomposition that
+strips the latter out throws away true-score variance. The site-dependent
+ability–speed correlation (≈ 0 in DE/Canada, −.52 in rural CO, where fast =
+guessing) additionally means no fixed recombination of decomposed parts
+travels across sites.
+
+**Recommendations for the DCC:**
+
+- **Adopt rate normalization now** (patch below). It fixes the Canadian
+  double-block and short-run distortions at zero modeling cost and is what
+  the ROAR "net correct in 3 minutes" score means.
+- **If a measurement model is wanted**, the next step is an
+  **offset-Poisson / Rasch-Poisson counts GLMM** (net-correct count with
+  `offset(log(time))`, corpus fixed effects, child random effects) — it is
+  rate normalization with standard errors and corpus adjustment, not a new
+  scoring philosophy.
+- **Diffusion IRT is now tested, not just argued against: don't use it for
+  the primary SRE score.** The full hierarchical Wiener fit (9.5 h on
+  Sherlock) yields drift scores that are less stable (.56 vs .72) and mostly
+  less valid than the rate score. The decomposition (drift vs boundary vs
+  ndt) remains available in `data/sre_ddm_estimates.rds` for substantive
+  questions about speed–accuracy tradeoff and its development — boundary
+  separation declines with age in every dataset — but that is a research
+  variable, not a score.
+- **Use RT for data quality regardless**: sub-second responses sit at chance
+  and range from 3% of trials (DE) to 31% (rural CO). A fast-guess flag
+  (e.g. proportion of RT < 1 s) is a cheap, useful run-level QC covariate.
+
+Proposed patch to `levantemodels::score_sre()`:
+
+```r
+score_sre <- \(trial_data_task, dataset) {
+  trial_data_task |>
+    group_by(.data$run_id) |>
+    summarise(elapsed = sum(.data$rt_numeric, na.rm = TRUE) / 1000,
+              net = sum(.data$correct) - sum(!.data$correct)) |>
+    filter(.data$elapsed >= 30) |>
+    mutate(score = scale(.data$net / .data$elapsed * 180)[, 1],
+           score_type = "guessing_adjusted_rate_scaled") |>
+    select(-"elapsed", -"net")
+}
+```

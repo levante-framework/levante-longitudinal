@@ -71,3 +71,6 @@ _freeze/
 
 /.quarto/
 **/*.quarto_ipynb
+
+# Sherlock DDM bundle: data-derived JSONs stay local (trial-level data)
+tasks/sherlock_sre_ddm/*.json
