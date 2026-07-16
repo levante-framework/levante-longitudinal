@@ -18,6 +18,7 @@ banks <- list(
   en = "pilot_western_ca_main"
 )
 
+models <- list()
 scores <- purrr::imap_dfr(banks, function(datasets, bank) {
   wide <- sre |>
     filter(dataset %in% datasets) |>
@@ -30,13 +31,16 @@ scores <- purrr::imap_dfr(banks, function(datasets, bank) {
   message(bank, ": ", nrow(resp), " runs x ", sum(keep), " items (",
           sum(!keep), " constant items dropped)")
   mod <- mirt::mirt(resp[, keep], 1, itemtype = "Rasch", verbose = FALSE)
-  fs <- mirt::fscores(mod, method = "EAP")
+  models[[bank]] <<- mod
+  fs <- mirt::fscores(mod, method = "EAP", full.scores.SE = TRUE)
   tibble(bank = bank, run_id = rownames(resp),
-         theta_zerofill = fs[, 1])
+         theta_zerofill = fs[, 1], theta_se = fs[, 2],
+         rxx = mirt::empirical_rxx(fs))
 })
 
 scores <- scores |>
   left_join(distinct(sre, run_id, dataset, user_id), by = "run_id")
 
 write_rds(scores, here::here("data/sre_zerofill_scores.rds"), compress = "gz")
-message("saved: ", nrow(scores), " run scores")
+write_rds(models, here::here("data/sre_zerofill_models.rds"), compress = "gz")
+message("saved: ", nrow(scores), " run scores + fitted models")

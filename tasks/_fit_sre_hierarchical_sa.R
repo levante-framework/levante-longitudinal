@@ -28,10 +28,14 @@ rt_mod <- lmer(log(rt_s) ~ 0 + dataset + (1 | run_id) + (1 | item_uid),
                data = sre, REML = FALSE)
 message("RT LMM done: ", format(Sys.time() - t0))
 
-run_est <- tibble(run_id = rownames(ranef(acc_mod)$run_id),
-                  theta = ranef(acc_mod)$run_id[[1]]) |>
-  full_join(tibble(run_id = rownames(ranef(rt_mod)$run_id),
-                   tau = -ranef(rt_mod)$run_id[[1]]),  # higher = faster
+re_acc <- ranef(acc_mod, condVar = TRUE)$run_id
+re_rt <- ranef(rt_mod, condVar = TRUE)$run_id
+run_est <- tibble(run_id = rownames(re_acc),
+                  theta = re_acc[[1]],
+                  theta_se = sqrt(as.vector(attr(re_acc, "postVar")))) |>
+  full_join(tibble(run_id = rownames(re_rt),
+                   tau = -re_rt[[1]],  # higher = faster
+                   tau_se = sqrt(as.vector(attr(re_rt, "postVar")))),
             by = "run_id") |>
   left_join(distinct(sre, run_id, dataset, user_id), by = "run_id")
 

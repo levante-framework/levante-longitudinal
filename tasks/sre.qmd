@@ -833,16 +833,274 @@ not about rescuing aggregate structure — which was already fine.
 
 **3. Efficiency modeling: a four-rung ladder, and the rate score wins every
 rung.** Every model-based alternative is less valid and/or less stable than
-the corrected rate score where they differ. On the most demanding
-criterion, Bogotá 16-month rank-order stability:
+the corrected rate score where they differ. The scoreboard below compares
+all methods on every available metric.
 
-| score | stability | fatal flaw elsewhere |
-|---|---|---|
-| corrected rate (C − I per 180 s) | **.72** | — |
-| zero-filled Rasch (ROAR suggestion) | .72 | rewards guessing (r = **+.46** with fast-guess share in rural CO vs −.42 for rate; PA validity .27 vs .57) |
-| hierarchical SA composite (θ + τ) | .68 | speed dimension means different things by site |
-| diffusion-IRT drift (full Wiener, item REs) | .56 | discards stable pacing/caution variance |
-| EZ-diffusion drift (no items) | .44 | all of the above, plus no item structure |
+## Scoreboard: every method × every metric
+
+Validity columns are n-weighted means of within-dataset correlations
+(criteria from the hackathon scores: PA/SWR/Vocab/TROG θ, first run per
+child). Reliability uses the best available estimator per method:
+odd/even-trial split-half with Spearman–Brown for the trial-computable
+scores (rate, EZ), model-based empirical reliability for the latent-score
+methods (zero-fill: mirt EAP r~xx~; SA/DDM: var(θ̂)/(var(θ̂)+mean(SE²))).
+Germany test–retest uses `levante_data_latest` v1_2 (the hackathon subset
+has no DE repeats): n = 23 pairs at ~3.6 months, rescored per method (DDM
+would need a full refit — left blank).
+
+```{r scoreboard-methods}
+# one frame of run-level scores for every method, z within dataset
+methods_run <- scores_cmp |>
+  select(dataset, run_id, rate = score_new) |>
+  full_join(zf |> select(dataset, run_id, zerofill = zf_z),
+            by = c("dataset", "run_id")) |>
+  full_join(sa_run |> select(dataset, run_id, sa_composite = eff),
+            by = c("dataset", "run_id")) |>
+  full_join(ez_run |> group_by(dataset) |>
+              mutate(ez_drift = scale(drift)[, 1]) |> ungroup() |>
+              select(dataset, run_id, ez_drift),
+            by = c("dataset", "run_id"))
+if (has_ddm) {
+  methods_run <- methods_run |>
+    full_join(ddm$run |> group_by(dataset) |>
+                mutate(ddm_drift = scale(drift_re)[, 1]) |> ungroup() |>
+                select(dataset, run_id, ddm_drift),
+              by = c("dataset", "run_id"))
+}
+method_levels <- intersect(
+  c("rate", "zerofill", "sa_composite", "ddm_drift", "ez_drift"),
+  names(methods_run))
+
+# criteria: age + other language/reading tasks (first run per child)
+crit_wide <- sc_all |>
+  filter(task_id %in% c("pa", "swr", "vocab", "trog"), !is.na(score)) |>
+  first_run() |>
+  select(dataset, user_id, task_id, crit_score = score) |>
+  pivot_wider(names_from = task_id, values_from = crit_score)
+
+board <- sre_scores_pub |>
+  first_run() |>
+  select(dataset, user_id, run_id, age) |>
+  left_join(crit_wide, by = c("dataset", "user_id")) |>
+  inner_join(methods_run, by = c("dataset", "run_id"))
+
+validity <- board |>
+  pivot_longer(all_of(method_levels), names_to = "method",
+               values_to = "score") |>
+  filter(!is.na(score)) |>
+  pivot_longer(c(age, pa, swr, vocab, trog), names_to = "criterion",
+               values_to = "crit") |>
+  filter(!is.na(crit)) |>
+  group_by(method, criterion, dataset) |>
+  filter(n() >= 20) |>
+  summarise(n = n(), r = cor(score, crit), .groups = "drop") |>
+  group_by(method, criterion) |>
+  summarise(r = weighted.mean(r, n), .groups = "drop") |>
+  pivot_wider(names_from = criterion, values_from = r) |>
+  select(method, age, pa, swr, vocab, trog)
+```
+
+```{r scoreboard-reliability}
+# split-half (odd/even trials, Spearman-Brown) for rate and EZ
+halves <- sre |>
+  mutate(half = ifelse(trial_number %% 2 == 0, "even", "odd")) |>
+  group_by(dataset, run_id, half) |>
+  summarise(rate_h = (sum(correct) - sum(!correct)) / sum(rt_s) * 180,
+            n_h = n(), pc_h = mean(correct),
+            mrt_h = mean(rt_s[correct & rt_s >= 0.25 & rt_s <= 30]),
+            vrt_h = var(rt_s[correct & rt_s >= 0.25 & rt_s <= 30]),
+            nc_h = sum(correct), .groups = "drop")
+
+sb <- \(r) 2 * r / (1 + r)
+wmean_by_ds <- \(df, x1, x2) df |>
+  group_by(dataset) |>
+  filter(n() >= 20) |>
+  summarise(n = n(), r = cor({{x1}}, {{x2}}, use = "complete.obs"),
+            .groups = "drop") |>
+  summarise(rel = sb(weighted.mean(r, n))) |> pull(rel)
+
+rate_halves <- halves |>
+  filter(n_h >= 5) |>
+  select(dataset, run_id, half, rate_h) |>
+  pivot_wider(names_from = half, values_from = rate_h) |>
+  filter(!is.na(odd), !is.na(even))
+rel_rate <- wmean_by_ds(rate_halves, odd, even)
+
+ez_halves <- halves |>
+  filter(n_h >= 8, nc_h >= 5, !is.na(vrt_h), vrt_h > 0) |>
+  mutate(pc_adj = pmin(pmax(pc_h, 0.5 + 1 / (2 * n_h)), 1 - 1 / (2 * n_h)),
+         drift_h = ez_diffusion(pc_adj, vrt_h, mrt_h)$drift) |>
+  select(dataset, run_id, half, drift_h) |>
+  pivot_wider(names_from = half, values_from = drift_h) |>
+  filter(!is.na(odd), !is.na(even))
+rel_ez <- wmean_by_ds(ez_halves, odd, even)
+
+# model-based empirical reliability for the latent-score methods
+rel_zf <- zf |> distinct(bank, rxx) |>
+  left_join(zf |> count(bank), by = "bank") |>
+  summarise(rel = weighted.mean(rxx, n)) |> pull(rel)
+
+rel_sa <- sa_run |>
+  group_by(dataset) |>
+  summarise(err = mean((theta_se / sd(theta))^2) + mean((tau_se / sd(tau))^2),
+            tot = var(scale(theta)[, 1] + scale(tau)[, 1]),
+            n = n(), .groups = "drop") |>
+  summarise(rel = weighted.mean(pmax(0, 1 - err / tot), n)) |> pull(rel)
+
+rel_ddm <- if (has_ddm) ddm$run |>
+  group_by(dataset) |>
+  summarise(rel = var(drift_re) / (var(drift_re) + mean(drift_se^2)),
+            n = n(), .groups = "drop") |>
+  summarise(rel = weighted.mean(rel, n)) |> pull(rel) else NA_real_
+
+reliability <- tibble(
+  method = c("rate", "zerofill", "sa_composite", "ddm_drift", "ez_drift"),
+  reliability = c(rel_rate, rel_zf, rel_sa, rel_ddm, rel_ez),
+  rel_type = c("split-half (SB)", "EAP rxx", "model rxx", "model rxx",
+               "split-half (SB)"))
+```
+
+```{r scoreboard-retest}
+# Germany test-retest, levante_data_latest v1_2 (n=23 pairs, ~3.6 months)
+de <- read_rds(here("data/sre_de_retest_v1_2.rds"))
+de_tr <- de$trials |>
+  mutate(correct = as.logical(correct), rt_s = rt_numeric / 1000)
+
+de_scores <- de_tr |>
+  group_by(run_id) |>
+  summarise(rate = (sum(correct) - sum(!correct)) / sum(rt_s) * 180,
+            .groups = "drop")
+
+# zero-fill: score with the hackathon-calibrated DE Rasch model.
+# Matrix starts at 0 (unreached AND wrong both 0); set the correct
+# responses to 1. Columns follow the model's item order — fscores'
+# response.pattern matches by POSITION.
+zf_mods <- read_rds(here("data/sre_zerofill_models.rds"))
+de_items <- mirt::extract.mirt(zf_mods$de, "itemnames")
+de_resp <- matrix(0L, nrow(de_scores), length(de_items),
+                  dimnames = list(de_scores$run_id, de_items))
+obs <- de_tr |> filter(item_uid %in% de_items, correct)
+de_resp[cbind(match(obs$run_id, rownames(de_resp)),
+              match(obs$item_uid, de_items))] <- 1L
+de_scores$zerofill <- mirt::fscores(zf_mods$de, method = "EAP",
+                                    response.pattern = de_resp)[, "F1"]
+
+# EZ per run
+de_ez <- de_tr |>
+  filter(rt_s >= 0.25, rt_s <= 30) |>
+  group_by(run_id) |>
+  filter(n() >= 15, sum(correct) >= 10) |>
+  summarise(n = n(), pc = mean(correct),
+            mrt = mean(rt_s[correct]), vrt = var(rt_s[correct]),
+            .groups = "drop") |>
+  mutate(pc = pmin(pmax(pc, 0.5 + 1 / (2 * n)), 1 - 1 / (2 * n)),
+         ez_drift = ez_diffusion(pc, vrt, mrt)$drift)
+de_scores <- de_scores |> left_join(de_ez |> select(run_id, ez_drift),
+                                    by = "run_id")
+
+# hierarchical SA refit on the v1_2 DE trials
+suppressPackageStartupMessages(library(lme4))
+de_lme <- de_tr |> filter(rt_s >= 0.25, rt_s <= 30)
+de_acc <- glmer(correct ~ (1 | run_id) + (1 | item_uid), data = de_lme,
+                family = binomial, nAGQ = 0)
+de_rt <- lmer(log(rt_s) ~ (1 | run_id) + (1 | item_uid), data = de_lme,
+              REML = FALSE)
+de_sa <- tibble(run_id = rownames(ranef(de_acc)$run_id),
+                theta = ranef(de_acc)$run_id[[1]]) |>
+  inner_join(tibble(run_id = rownames(ranef(de_rt)$run_id),
+                    tau = -ranef(de_rt)$run_id[[1]]), by = "run_id") |>
+  mutate(sa_composite = scale(theta)[, 1] + scale(tau)[, 1])
+de_scores <- de_scores |> left_join(de_sa |> select(run_id, sa_composite),
+                                    by = "run_id")
+
+de_pairs <- de$scores |>
+  inner_join(de_scores, by = "run_id") |>
+  group_by(user_id) |>
+  filter(n() == 2) |>
+  arrange(age) |>
+  summarise(across(c(rate, zerofill, ez_drift, sa_composite),
+                   list(t1 = ~.x[1], t2 = ~.x[2])), .groups = "drop")
+
+retest_de <- tibble(
+  method = c("rate", "zerofill", "sa_composite", "ddm_drift", "ez_drift"),
+  retest_de = c(cor(de_pairs$rate_t1, de_pairs$rate_t2, use = "complete.obs"),
+                cor(de_pairs$zerofill_t1, de_pairs$zerofill_t2,
+                    use = "complete.obs"),
+                cor(de_pairs$sa_composite_t1, de_pairs$sa_composite_t2,
+                    use = "complete.obs"),
+                NA_real_,
+                cor(de_pairs$ez_drift_t1, de_pairs$ez_drift_t2,
+                    use = "complete.obs")))
+```
+
+```{r scoreboard-stability}
+stab_bog <- sre_scores_pub |>
+  filter(dataset == "pilot_uniandes_co_bogota") |>
+  inner_join(methods_run, by = c("dataset", "run_id")) |>
+  group_by(user_id) |>
+  filter(n() >= 2) |>
+  arrange(time_started) |>
+  summarise(gap = as.numeric(difftime(time_started[2], time_started[1],
+                                      units = "days")),
+            across(all_of(method_levels), list(t1 = ~.x[1], t2 = ~.x[2])),
+            .groups = "drop") |>
+  filter(gap > 300)
+
+stability <- tibble(method = method_levels) |>
+  rowwise() |>
+  mutate(stability_bogota = cor(stab_bog[[paste0(method, "_t1")]],
+                                stab_bog[[paste0(method, "_t2")]],
+                                use = "complete.obs")) |>
+  ungroup()
+```
+
+```{r scoreboard-table}
+method_labels <- c(
+  rate = "Corrected rate (C − I per 180 s)",
+  zerofill = "Zero-filled Rasch (ROAR)",
+  sa_composite = "Hierarchical SA composite",
+  ddm_drift = "Diffusion-IRT drift",
+  ez_drift = "EZ-diffusion drift")
+
+scoreboard <- validity |>
+  left_join(reliability, by = "method") |>
+  left_join(retest_de, by = "method") |>
+  left_join(stability, by = "method") |>
+  mutate(method = factor(method, levels = names(method_labels),
+                         labels = method_labels)) |>
+  arrange(method)
+
+knitr::kable(scoreboard, digits = 2,
+             col.names = c("Method", "Age", "PA", "SWR", "Vocab", "TROG",
+                           "Reliability", "(estimator)",
+                           "DE retest (3.6 mo, n=23)",
+                           "Bogotá stability (16 mo, n=181)"),
+             caption = "Scoring-method scoreboard. Validity = n-weighted mean within-dataset r; all scores z within dataset.")
+```
+
+Reading the scoreboard:
+
+- **The corrected rate wins everything that matters for a primary score.**
+  Best or tied on age (.50), PA (.48), SWR (.57), best on both
+  repeat-administration metrics (DE 3.6-month retest **.83**; Bogotá
+  16-month stability .72), with an honest split-half reliability of .83.
+- **One real nuance: speed-purged scores track untimed *comprehension*
+  slightly better.** Diffusion-IRT drift has the best TROG correlation
+  (.50 vs .44 for rate) and drift/SA edge the rate score on Vocab —
+  while the rate score wins on the reading-efficiency-adjacent criteria
+  (SWR, PA, age). That is a sensible division of labor: drift isolates
+  processing efficiency (closer to language knowledge), while the rate
+  score's pacing component is signal for reading fluency specifically.
+  It validates drift as a *research* variable without changing the
+  scoring recommendation.
+- **Zero-fill's high nominal reliability (.88) is partly an artifact**:
+  the deterministic block of zeros is "reliable" in the r~xx~ sense
+  without being valid — it posts the worst validity column of any method
+  on TROG (.20) and PA (.31). Reliability estimators also aren't
+  directly comparable across rows (split-half vs model-based).
+- **EZ-diffusion's DE retest of .23** (vs .83 for the rate score on the
+  same 23 children) is the cleanest single demonstration that inverting
+  three summary statistics per run does not produce a usable score.
 
 Item structure is not the missing ingredient: the full diffusion-IRT fit
 recovers sensible item parameters (item drift effects correlate .52 with
