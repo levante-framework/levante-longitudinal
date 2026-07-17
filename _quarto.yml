@@ -42,6 +42,7 @@ book:
       chapters:
         - tasks/hearts_and_flowers.qmd
         - tasks/memory.qmd
+        - tasks/same_different.qmd
         - tasks/math.qmd
         - tasks/math_item_calibration.qmd
         - tasks/math_eap_vs_ml.qmd
