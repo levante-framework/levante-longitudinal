@@ -55,6 +55,7 @@ book:
         - tasks/tom_reality_check_bug.qmd
         - tasks/roar_word.qmd
         - tasks/roar_literacy.qmd
+        - tasks/mrot/mrot_item_set_compare.qmd
         - tasks/sre.qmd
     - part: "Cross-task analyses"
       chapters:
