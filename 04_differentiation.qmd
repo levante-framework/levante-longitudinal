@@ -42,7 +42,7 @@ sites4 <- c("pilot_mpieva_de_main","pilot_uniandes_co_bogota",
 
 # MEFS (raw total_score, age-increasing) — from the levante-pilots scoring outputs;
 # not in levante_data_latest. Merge by user_id.
-mefs <- read_rds("~/Projects/levante-pilots/02_scoring_outputs/scores/scores_mefs.rds") |>
+mefs <- read_rds(here("../levante-pilots/02_scoring_outputs/scores/scores_mefs.rds")) |>
   filter(metric_type == "total_score") |>
   group_by(user_id) |> arrange(age) |> slice(1) |> ungroup() |>
   select(user_id, mefs = metric_value)

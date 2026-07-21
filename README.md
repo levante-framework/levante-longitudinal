@@ -6,7 +6,7 @@ on Redivis (currently **v1.2**, the bug-fixed release) via the `rlevante`
 package. Shared conventions, palettes, loaders, and cleaning helpers live in
 `common.R`; every notebook starts with `source(here::here("common.R"))`.
 
-See `~/Projects/LEVANTE.md` for cross-project LEVANTE context.
+See [`levante-meta/LEVANTE.md`](https://github.com/levante-framework/levante-data-meta/blob/main/LEVANTE.md) for cross-project LEVANTE context.
 
 ## Quarto book
 

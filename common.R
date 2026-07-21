@@ -1,7 +1,7 @@
 # common.R
 #
 # Shared LEVANTE conventions for this project:
-#  - plotting theme & palettes (matched to ~/Projects/levante-pilots/plot_settings.R)
+#  - plotting theme & palettes (matched to ../levante-pilots/plot_settings.R)
 #  - task / construct lookups
 #  - site label lookups
 #  - dataset loader for levante_data_latest with disk cache
