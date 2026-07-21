@@ -1,0 +1,130 @@
+```{r}
+library(tidyverse)
+library(here)
+library(mirt)
+library(levantemodels)
+```
+
+```{r}
+pilots_data_dir <- here("..", "levante-pilots", "01_fetched_data")
+task_data_nested <- read_rds(file.path(pilots_data_dir, "task_data_nested.rds"))
+run_data <- read_rds(file.path(pilots_data_dir, "run_data.rds"))
+
+task_data_mrot <- task_data_nested |> filter(item_task == "mrot")
+
+# at least for this task, NA responses seem to be incorrectly coded as incorrect
+task_data <- task_data_mrot |>
+  unnest(data) |>
+  filter(!is.na(response)) |>
+  left_join(run_data |> select(run_id, age))
+
+# code various item features
+items_coded <- task_data |>
+  select(contains("item")) |> distinct() |>
+  separate(item, into = c("stimulus", "angle")) |>
+  mutate(angle = as.numeric(angle)) |>
+  rename(item = item_original) |>
+  mutate(angle_full = item |> str_sub(str_length(item) - 2, str_length(item)) |> as.numeric(),
+         stimulus_code = item |> str_sub(1, 1),
+         chirality = item |> str_sub(2, 2)) |>
+  group_by(stimulus) |>
+  mutate(stimulus_sep = if (n_distinct(stimulus_code) == 1) stimulus else paste(stimulus, stimulus_code, sep = "_"))
+
+# replace item_uid with item_original
+task_data_angle <- task_data |>
+  mutate(item_uid = item_original) |>
+  nest(data = -c(dataset, item_task, language))
+
+# keep item_uid
+task_data_collapsed <- task_data |>
+  nest(data = -c(dataset, item_task, language))
+```
+
+```{r}
+models_multigroup <- tribble(
+  ~nfact, ~itemtype, ~invariance,
+  # 1,   "Rasch", "configural",
+  # 1,   "Rasch", "scalar",
+  # 1,     "2PL", "configural",
+  # 1,     "2PL", "metric",
+  1,     "2PL", "scalar",
+)
+
+priors <- list(d = c("norm", 0, 3), a1 = c("norm", 1, 0.3))
+
+# models where items are differentiated
+fit_task_models_multigroup(task_data = task_data_angle,
+                           models = models_multigroup,
+                           prior = priors,
+                           task = "mrot",
+                           group = dataset,
+                           registry_dir = "models/mrot_test_angle")
+
+# models where items are collapsed
+fit_task_models_multigroup(task_data = task_data_collapsed,
+                           models = models_multigroup,
+                           prior = priors,
+                           task = "mrot",
+                           group = dataset,
+                           registry_dir = "models/mrot_test_collapsed")
+```
+
+```{r}
+m_angle <- read_rds("models/mrot_test_angle/mrot/multigroup_dataset/all_items/mrot_2pl_f1_scalar.rds")
+m_collapsed <- read_rds("models/mrot_test_collapsed/mrot/multigroup_dataset/all_items/mrot_2pl_f1_scalar.rds")
+
+coef_angle <- mod_coefs(m_angle)
+coef_collapsed <- mod_coefs(m_collapsed) |> rename(item_uid = item)
+
+items_coded <- task_data |>
+  select(contains("item")) |> distinct() |>
+  separate(item, into = c("stimulus", "angle")) |>
+  mutate(angle = as.numeric(angle)) |>
+  rename(item = item_original) |>
+  mutate(angle_full = item |> str_sub(str_length(item) - 2, str_length(item)) |> as.numeric(),
+         stimulus_code = item |> str_sub(1, 1),
+         chirality = item |> str_sub(2, 2)) |>
+  arrange(item_group, stimulus, angle, angle_full, chirality)
+
+coef_uid <- coef_collapsed |> distinct(item_uid, a_uid = a1, d_uid = difficulty)
+
+coef_comp <- coef_angle |>
+  filter(n_responses > 30) |>
+  select(-group, -n_responses) |> distinct() |>
+  left_join(items_coded) |> left_join(coef_uid)
+```
+
+```{r}
+ggplot(coef_comp, aes(x = difficulty, y = d_uid)) +
+  coord_fixed() +
+  geom_abline(color = 'lightgrey') +
+  geom_point(aes(colour = stimulus)) +
+  scale_colour_brewer(palette = "Set2") +
+  labs(x = "Individual item difficulty", y = "Collapsed item difficulty")
+
+ggplot(coef_comp, aes(x = angle_full, y = difficulty)) +
+  facet_wrap(vars(item_group), nrow = 1) +
+  geom_point(aes(colour = interaction(stimulus, stimulus_code), shape = chirality), size = 1) +
+  scale_colour_brewer(palette = "Set2") +
+  scale_x_continuous(breaks = unique(coef_comp$angle_full)) +
+  labs(x = "Stimulus angle", y = "Item difficulty", colour = "Stimulus", shape = "Chirality")
+ggsave("mrot_coef_comp.png", width = 7, height = 3)
+```
+
+```{r}
+extract_group_mods <- \(mod) {
+  extract.mirt(mod, "groupNames") |> set_names() |> map(\(gr) extract.group(mod, gr))
+}
+
+mod_angle <- model_from_record(m_angle) |> extract_group_mods()
+scores_angle <- mod_angle |> map(\(m) fscores(m, method = "EAP", full.scores.SE = TRUE))
+
+marginal_rxx_angle <- mod_angle |> map(marginal_rxx)
+empirical_rxx_angle <- scores_angle |> map(empirical_rxx)
+
+mod_collapsed <- model_from_record(m_collapsed) |> extract_group_mods()
+scores_collapsed <- mod_collapsed |> map(\(m) fscores(m, method = "EAP", full.scores.SE = TRUE))
+
+marginal_rxx_collapsed <- mod_collapsed |> map(marginal_rxx)
+empirical_rxx_collapsed <- scores_collapsed |> map(empirical_rxx)
+```

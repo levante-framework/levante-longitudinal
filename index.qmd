@@ -17,6 +17,9 @@ figure is current with the code that produced it.
 
 ## The arc
 
+**Longitudinal analyses** walk from raw data validation through construct
+structure to within-child variability and network context.
+
 **Data & integrity** — pull and clean the data ([00](00_load_data.qmd)); audit
 per-(site, task) integrity, adaptive/mode artifacts, and extreme scores
 ([01](01_data_integrity.qmd)).
@@ -38,10 +41,10 @@ site/age, and longitudinal stability ([07](07_rt_variability.qmd)); and the
 **Network context** — enrollment ages and longitudinal coverage across the
 LEVANTE network ([09](09_longitudinal_coverage.qmd)).
 
-## Appendices: task deepdives
+## Task deepdives & cross-task analyses
 
-Per-task psychometric reports, plus cross-task analyses, collected as
-appendices. **Task deepdives** cover each core task and the ROAR literacy
+Per-task psychometric reports, plus cross-task analyses. **Task deepdives**
+cover each core task and the ROAR literacy
 measures: item structure and difficulty, DIF, answer-key forensics, and
 scoring audits — Hearts & Flowers, Memory, Same & Different (IRTree scoring
 models and recode audit), Math (plus item calibration and

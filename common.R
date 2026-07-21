@@ -14,7 +14,7 @@ suppressPackageStartupMessages({
   library(glue)
   library(fs)
   library(ggthemes)
-  library(rlevante)
+  library(levantemodels)
 })
 
 # ---- Theme ------------------------------------------------------------------
