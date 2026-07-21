@@ -27,7 +27,7 @@ High-res PNGs are written to `figures/` for slides.
 
 ```{r setup}
 source(here::here("common.R"))
-library(rlevante)
+library(levantemodels)
 library(mirt)
 library(patchwork)
 

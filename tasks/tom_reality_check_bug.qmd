@@ -24,7 +24,7 @@ checks should be the *most* translatable items. Hypothesis: the DIF is a
 item functioning.
 
 To test it we built a **shadow processing pipeline**: raw (unprocessed)
-Bogotá + Leipzig data, re-processed with the `rlevante` internals but keeping
+Bogotá + Leipzig data, re-processed with the `levantemodels` internals but keeping
 the columns production drops — `item_uid_source`, the raw `item` string
 (deployment version codes), `answer`/`distractors` (English stimulus keys —
 language-independent ground truth), timestamps, and run-level
@@ -48,7 +48,7 @@ both  <- loop$both
 
 # 1. How ToM item identity is constructed (and where it's fragile)
 
-Tracing `rlevante`'s `process-trials.R` and `recode_tom`:
+Tracing `levantemodels`'s `process-trials.R` and `recode_tom`:
 
 - Up to three **competing item-ID sources** per trial: the deployed task's own
   `item_uid`, a curated `trial_items` map (trial_id → uid, assigned

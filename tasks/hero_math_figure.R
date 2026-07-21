@@ -1,7 +1,7 @@
 # Hero longitudinal math figure for a slide: CO-Bogotá, CO-rural, DE.
 # Corrected (bug-fixed) EAP scores. Points colored by LEVANTE site convention,
 # faint within-child trajectory lines where two-wave data exists, GAM smooth+SE.
-suppressMessages({library(tidyverse); library(here); library(mirt); library(rlevante); library(mgcv)})
+suppressMessages({library(tidyverse); library(here); library(mirt); library(levantemodels); library(mgcv)})
 source(here("common.R"))
 
 fig_dir <- here("figures"); fs::dir_create(fig_dir)

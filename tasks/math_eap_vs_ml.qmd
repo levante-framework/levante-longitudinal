@@ -18,7 +18,7 @@ execute:
 
 Mike asked for a side-by-side EAP vs ML rescoring of Bogotá math, expecting
 that ML would remove apparent T2 compression due to EAP shrinkage. The
-investigation surfaced something more substantive: **`rlevante::score_irt`
+investigation surfaced something more substantive: **`levantemodels::score_irt`
 has a column-order bug** that produces wrong θ estimates whenever the
 `response.pattern` passed to `mirt::fscores()` has its item columns in a
 different order from the model's internal item order. When we fix the
@@ -29,7 +29,7 @@ than the column fix.
 
 ```{r setup}
 source(here::here("common.R"))
-library(rlevante)
+library(levantemodels)
 library(mirt)
 
 scores <- read_rds(here::here("data", "scores_all_sites.rds"))
@@ -46,7 +46,7 @@ reordered columns → wildly different θ.
 # cached copies of the scoring table + v1_14 math ModelRecord
 # (get_model_record's live download path is broken against the current
 # redivis package)
-spec <- rlevante:::get_model_spec("math", "pilot_uniandes_co_bogota",
+spec <- levantemodels:::get_model_spec("math", "pilot_uniandes_co_bogota",
           read_rds(here::here("data/scoring_table_cache.rds")))
 mod_rec <- read_rds(here::here("data/math_model_record_v1_14.rds"))
 
@@ -75,13 +75,13 @@ tibble(
                   caption = "Same kid, same response data, three column layouts.")
 ```
 
-# The bug is in `rlevante::score_irt`
+# The bug is in `levantemodels::score_irt`
 
 `score_irt` aligns missing items by appending them to `data_prepped`'s
 existing columns, but never reorders to match `items(mod_rec)`:
 
 ```{r show-the-bug, eval=FALSE}
-# Verbatim from rlevante:::score_irt
+# Verbatim from levantemodels:::score_irt
 overlap_items <- intersect(colnames(data_prepped), items(mod_rec))
 data_aligned  <- select(data_prepped, !!overlap_items)
 missing_items <- setdiff(items(mod_rec), colnames(data_prepped))
@@ -89,7 +89,7 @@ data_aligned[, missing_items] <- NA
 # ↑ at this point, data_aligned columns are
 #   [overlap_items_in_data_prepped_order, missing_items_in_setdiff_order]
 # which is NOT items(mod_rec) order. The fix:
-data_aligned <- data_aligned[, items(mod_rec)]   # <-- missing in rlevante
+data_aligned <- data_aligned[, items(mod_rec)]   # <-- missing in levantemodels
 scores <- mirt::fscores(mod, method = "EAP", response.pattern = data_aligned)
 ```
 
@@ -107,8 +107,8 @@ my_eap <- score_with_method(co_trials, "math", "pilot_uniandes_co_bogota",
 my_ml  <- score_with_method(co_trials, "math", "pilot_uniandes_co_bogota",
                              method = "ML",  mod_rec = mod_rec)
 
-# 2) Uncorrected: call rlevante's own score_irt
-official <- rlevante:::score_irt(co_recoded, as.list(spec), mod_rec) |>
+# 2) Uncorrected: call levantemodels's own score_irt
+official <- levantemodels:::score_irt(co_recoded, as.list(spec), mod_rec) |>
   transmute(run_id, official_score_irt = as.numeric(score))
 
 # 3) Published pipeline scores (from levante_data_latest)
@@ -126,16 +126,16 @@ all3 <- pipeline |>
 all3 |>
   filter(!is.na(my_eap), !is.na(official_score_irt)) |>
   summarise(
-    `pipeline ↔ rlevante::score_irt`    = cor(pipeline_score, official_score_irt),
+    `pipeline ↔ levantemodels::score_irt`    = cor(pipeline_score, official_score_irt),
     `pipeline ↔ corrected EAP`          = cor(pipeline_score, my_eap),
-    `rlevante::score_irt ↔ corrected EAP` = cor(official_score_irt, my_eap),
+    `levantemodels::score_irt ↔ corrected EAP` = cor(official_score_irt, my_eap),
     `corrected EAP ↔ corrected ML`      = cor(my_eap, my_ml)
   ) |>
   knitr::kable(digits = 3,
                caption = "Pearson r across scoring approaches")
 ```
 
-The published pipeline scores match `rlevante::score_irt` (r = 0.95) but
+The published pipeline scores match `levantemodels::score_irt` (r = 0.95) but
 disagree with the corrected EAP (r = 0.75) — confirming the bug propagated
 into the published scores.
 
@@ -285,7 +285,7 @@ write_rds(all3,   here::here("data", "math_co_all_scoring_approaches.rds"))
 
 # Conclusions
 
-1.  **`rlevante::score_irt` has a column-order bug.** When the
+1.  **`levantemodels::score_irt` has a column-order bug.** When the
     `response.pattern` data frame's columns are not in `items(mod_rec)`
     order, `mirt::fscores()` matches by position and returns wrong θs. A
     one-line fix is enough: reorder `data_aligned` to match
@@ -293,7 +293,7 @@ write_rds(all3,   here::here("data", "math_co_all_scoring_approaches.rds"))
 
 2.  **This bug has propagated into the published math scores** for Bogotá
     (and presumably every dataset/task scored by the same code path). The
-    published pipeline score correlates with `rlevante::score_irt` (r =
+    published pipeline score correlates with `levantemodels::score_irt` (r =
     0.95) but disagrees with the corrected EAP (r = 0.75).
 
 3.  **Under corrected scoring, the apparent T1 → T2 compression for Bogotá
@@ -307,7 +307,7 @@ write_rds(all3,   here::here("data", "math_co_all_scoring_approaches.rds"))
     patterns. The original story that "EAP shrinkage is the problem" was
     confounded with the bug.
 
-5.  **Suggested action for the DCC**: patch `rlevante::score_irt` to
+5.  **Suggested action for the DCC**: patch `levantemodels::score_irt` to
     reorder `data_aligned` columns before calling `mirt::fscores`. Then
     rescore the math (and likely every IRT task) scores in
     `levante_data_latest`. We expect non-trivial revisions to the

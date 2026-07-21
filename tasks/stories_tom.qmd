@@ -36,7 +36,7 @@ Decisions encoded here (per discussion):
 
 ```{r setup}
 source(here::here("common.R"))
-library(rlevante); library(mirt); library(psych); library(ggrepel)
+library(levantemodels); library(mirt); library(psych); library(ggrepel)
 
 meta <- read_rds(here::here("data/tom_meta/tom_item_metadata.rds")) |>
   filter(!is_hostile_attribution)
@@ -80,8 +80,8 @@ corrected <- imap_dfr(mods, function(mr, ds) {
   gold <- as.data.frame(mr@scores) |> select(run_id, gold = ability)
   fixed <- score_with_method(trd, "tom", ds, method = "EAP", mod_rec = mr) |>
     select(run_id, corrected = score, se = score_se)
-  buggy <- rlevante:::score_irt(recode_trials(trd),
-            as.list(rlevante:::get_model_spec("tom", ds,
+  buggy <- levantemodels:::score_irt(recode_trials(trd),
+            as.list(levantemodels:::get_model_spec("tom", ds,
               read_rds(here::here("data/scoring_table_cache.rds")))), mr) |>
     transmute(run_id, buggy = as.numeric(score))
   fixed |> left_join(buggy, by="run_id") |> left_join(gold, by="run_id") |>
