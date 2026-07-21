@@ -1,8 +1,8 @@
 project:
   type: book
   output-dir: _book
-  # Numbered chapters + landing page are the main book; per-task deepdives in
-  # tasks/ are appendices. reports/, old/ stay standalone.
+  # Numbered chapters, landing page, and per-task deepdives in tasks/ are all
+  # part of the main book now. reports/, old/ stay standalone.
   render:
     - index.qmd
     - "0[0-9]_*.qmd"
@@ -19,25 +19,18 @@ book:
     style: docked
   chapters:
     - index.qmd
-    - part: "Data & integrity"
+    - part: "Longitudinal analyses"
       chapters:
         - 00_load_data.qmd
         - 01_data_integrity.qmd
-    - part: "Growth & construct structure"
-      chapters:
         - 02_growth.qmd
         - 03_structure_invariance.qmd
         - 04_differentiation.qmd
         - 05_battery_design.qmd
-    - part: "Within-child variability"
-      chapters:
         - 06_within_child_variability.qmd
         - 07_rt_variability.qmd
         - 08_accuracy_variability.qmd
-    - part: "Network context"
-      chapters:
         - 09_longitudinal_coverage.qmd
-  appendices:
     - part: "Task deepdives"
       chapters:
         - tasks/hearts_and_flowers.qmd
