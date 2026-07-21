@@ -210,7 +210,7 @@ glue("Saved {nrow(scores)} cleaned score rows ({nrow(scores_raw)} raw) from {nro
 
 **Now on `levante_data_latest` v1.2 (corrected).** The major IRT
 column-order scoring bug we found (see `reports/rlevante_handoff.md`) has been
-fixed in rlevante and the data re-released; we verified v1.2 published scores
+fixed in levantemodels and the data re-released; we verified v1.2 published scores
 match our independent corrected scoring (r = 1.000). This section logs the
 remaining issues and how each is handled: (a) **fixed here** (cleaning applied
 in this notebook), (b) **resolved upstream** (fixed in the v1.2 release), and
@@ -219,7 +219,7 @@ validator).
 
 ## Resolved upstream (v1.2)
 
-**0. IRT column-order scoring bug (FIXED).** `rlevante::score_irt` did not
+**0. IRT column-order scoring bug (FIXED).** `levantemodels::score_irt` did not
 reorder response columns to the model's item order before `mirt::fscores`,
 which matches by position — so IRT-scored tasks were mis-scored, worst for
 CAT and guessing-floor items. This drove most of what we had attributed to

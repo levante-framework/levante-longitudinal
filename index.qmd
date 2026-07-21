@@ -9,7 +9,7 @@ title: "Overview"
 An exploratory analysis of the **LEVANTE core-task battery** — a sequence of
 reproducible notebooks that walk from raw data validation through construct
 structure to within-child variability. Data come from `levante_data_latest` on
-Redivis (currently the bug-fixed **v1.2** release) via the `rlevante` package;
+Redivis (currently the bug-fixed **v1.2** release) via the `levantemodels` package;
 shared conventions, palettes, and loaders live in `common.R`.
 
 Each chapter computes its results inline from the data, so every number and
@@ -72,7 +72,7 @@ test–retest figures, and the training-vs-development comparison.
 
 ## Reproducibility & provenance
 
-The notebooks render from Redivis data (gitignored; access via `rlevante`).
+The notebooks render from Redivis data (gitignored; access via `levantemodels`).
 `common.R` is sourced by every chapter. This book was assembled with
 [Quarto](https://quarto.org); see the
 [source repository](https://github.com/levante-framework/levante-longitudinal).

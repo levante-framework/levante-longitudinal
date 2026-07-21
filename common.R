@@ -126,7 +126,7 @@ core_task_ids <- c(
 #'
 #' @param refresh re-download even if cached
 #' @param version Redivis version qualifier; defaults to v1_2 (corrected scores; v1.0 had the
-#'        documented in the rlevante warning. Use "current" to always pull
+#'        documented in the levantemodels warning. Use "current" to always pull
 #'        the latest.
 load_levante_scores <- function(refresh = FALSE,
                                 version = "v1_2",
@@ -142,7 +142,7 @@ load_levante_scores <- function(refresh = FALSE,
   ref <- if (version == "current") "levante_data_latest"
          else glue("levante_data_latest:e9pf:{version}")
 
-  out <- rlevante::get_scores(ref) |>
+  out <- levantemodels::get_scores(ref) |>
     label_levante_scores()
 
   write_rds(out, cache_path)
@@ -168,7 +168,7 @@ load_levante_trials <- function(task_ids = NULL, refresh = FALSE,
   } else {
     ref <- if (version == "current") "levante_data_latest"
            else glue("levante_data_latest:e9pf:{version}")
-    out <- rlevante::get_trials(ref)
+    out <- levantemodels::get_trials(ref)
     write_rds(out, cache_path)
   }
   # Apply labels every time (label_levante_scores is idempotent enough)
@@ -179,7 +179,7 @@ load_levante_trials <- function(task_ids = NULL, refresh = FALSE,
 
 # ---- Rescoring with the production mirt model -------------------------------
 #
-# Mirror of rlevante:::score_irt but parameterized by fscores method so we can
+# Mirror of levantemodels:::score_irt but parameterized by fscores method so we can
 # compare EAP (the pipeline default) against ML on the same data and model.
 #
 # Returns a tibble with one row per run_id: { score, score_se, method }.
@@ -194,21 +194,21 @@ score_with_method <- function(trials, task, dataset, method = "EAP",
   if (is.null(scoring_table)) {
     st_cache <- here::here("data/scoring_table_cache.rds")
     scoring_table <- if (file.exists(st_cache)) readRDS(st_cache)
-                     else rlevante::fetch_scoring_table()
+                     else levantemodels::fetch_scoring_table()
   }
   if (is.null(registry_table) && is.null(mod_rec)) {
     rt_cache <- here::here("data/registry_table_cache.rds")
     registry_table <- if (file.exists(rt_cache)) readRDS(rt_cache)
-                      else rlevante::fetch_registry_table()
+                      else levantemodels::fetch_registry_table()
   }
-  spec <- rlevante:::get_model_spec(task, dataset, scoring_table)
-  if (is.null(mod_rec)) mod_rec <- rlevante:::get_model_record(spec, registry_table)
+  spec <- levantemodels:::get_model_spec(task, dataset, scoring_table)
+  if (is.null(mod_rec)) mod_rec <- levantemodels:::get_model_record(spec, registry_table)
 
   trials_task <- trials |> filter(task_id == spec$task_id | item_task == spec$item_task)
-  recoded     <- rlevante::recode_trials(trials_task)
+  recoded     <- levantemodels::recode_trials(trials_task)
 
-  data_filtered <- rlevante:::dedupe_items(recoded |> rename(group = "site"))
-  data_wide     <- rlevante:::to_mirt_shape_grouped(data_filtered)
+  data_filtered <- levantemodels:::dedupe_items(recoded |> rename(group = "site"))
+  data_wide     <- levantemodels:::to_mirt_shape_grouped(data_filtered)
   data_prepped  <- data_wide |> select(-"group")
   groups        <- data_wide |> pull("group")
   data_group    <- unique(groups)
@@ -224,17 +224,17 @@ score_with_method <- function(trials, task, dataset, method = "EAP",
     }
   }
 
-  overlap_items <- intersect(colnames(data_prepped), rlevante::items(mod_rec))
+  overlap_items <- intersect(colnames(data_prepped), levantemodels::items(mod_rec))
   data_aligned  <- data_prepped |> select(all_of(overlap_items))
-  missing_items <- setdiff(rlevante::items(mod_rec), colnames(data_prepped))
+  missing_items <- setdiff(levantemodels::items(mod_rec), colnames(data_prepped))
   data_aligned[, missing_items] <- NA
   # CRITICAL: reorder columns to match the model's item order. Without this,
   # mirt::fscores can mismatch response.pattern columns to the model by
   # position, producing wildly wrong θ estimates for some kids.
-  data_aligned <- data_aligned[, rlevante::items(mod_rec)]
+  data_aligned <- data_aligned[, levantemodels::items(mod_rec)]
 
-  mod_vals <- rlevante::model_vals(mod_rec)
-  if (rlevante::model_class(mod_rec) == "MultipleGroupClass") {
+  mod_vals <- levantemodels::model_vals(mod_rec)
+  if (levantemodels::model_class(mod_rec) == "MultipleGroupClass") {
     mod_recon <- mirt::multipleGroup(data = mod_rec@data, group = mod_rec@groups,
                                       pars = mod_vals, TOL = NaN)
     mod <- mirt::extract.group(mod_recon, group = data_group)
@@ -260,7 +260,7 @@ score_with_method <- function(trials, task, dataset, method = "EAP",
 # ---- Item parameters --------------------------------------------------------
 #
 # IRT item parameters live in the levante_metadata_scoring dataset on Redivis,
-# not in rlevante (as of v1.0). Pull them directly via the redivis R package.
+# not in levantemodels (as of v1.0). Pull them directly via the redivis R package.
 # Each calibration model writes its own row; for cross-site analyses we want
 # the multigroup_site / scalar Rasch fits.
 

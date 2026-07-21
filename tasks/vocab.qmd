@@ -39,7 +39,7 @@ what was producing the dramatic spaghetti decline.
 
 ```{r setup}
 source(here::here("common.R"))
-library(rlevante)
+library(levantemodels)
 library(mirt)
 
 scores <- read_rds(here::here("data", "scores_all_sites.rds"))
@@ -123,9 +123,9 @@ validate_vocab <- function(tr_site, dataset, mod_rec) {
   gold <- as.data.frame(mod_rec@scores) |> select(run_id, gold = ability)
   fixed <- score_with_method(tr_site, "vocab", dataset, method = "EAP",
                              mod_rec = mod_rec) |> select(run_id, fixed = score)
-  buggy <- rlevante:::score_irt(
+  buggy <- levantemodels:::score_irt(
     recode_trials(tr_site),
-    as.list(rlevante:::get_model_spec("vocab", dataset,
+    as.list(levantemodels:::get_model_spec("vocab", dataset,
               read_rds(here::here("data/scoring_table_cache.rds")))),
     mod_rec) |> transmute(run_id, buggy = as.numeric(score))
   v <- gold |> inner_join(fixed, by = "run_id") |> inner_join(buggy, by = "run_id")
