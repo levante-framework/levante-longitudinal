@@ -6,8 +6,7 @@ format: html
 
 ```{r}
 library(tidyverse)
-#devtools::install_git(url="https://github.com/levante-framework/rlevante")
-library(rlevante) 
+library(levante) 
 library(viridis)
 ```
 
@@ -22,7 +21,7 @@ dataset_spec <- list(list(name = "pilot_uniandes_co_rural_processed:bxgv",
                      list(name = "pilot_western_ca_main_processed:bgcj", 
                           version = "current")) 
 
-scores_list <- map(dataset_spec, \(d) rlevante::get_scores(d$name))
+scores_list <- map(dataset_spec, \(d) levante::get_scores(d$name))
 
 scores <- scores_list |>
   bind_rows()
@@ -119,7 +118,7 @@ ggplot(filter(bad_long, task_id=="vocab"),
 
 
 ```{r}
-de_trials <- rlevante::get_trials(data_source = "pilot_mpieva_de_main_processed:8wjx", 
+de_trials <- levante::get_trials(data_source = "pilot_mpieva_de_main_processed:8wjx", 
                                   version = "current")
 
 de_vocab_long <- filter(de_trials, task_id %in% c("vocab")) |>

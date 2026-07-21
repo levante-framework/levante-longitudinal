@@ -6,8 +6,7 @@ format: html
 
 ```{r}
 library(tidyverse)
-#devtools::install_git(url="https://github.com/levante-framework/rlevante")
-library(rlevante) 
+library(levante) 
 ```
 
 
@@ -20,7 +19,7 @@ dataset_spec <- list(list(name = "pilot_uniandes_co_rural_processed:bxgv:v1_0",
 # table = dataset.table("runs:8fp9")
 # table = dataset.table("runs_scored:6bsc")
 
-scores <- rlevante::get_scores(dataset_spec) |>
+scores <- levante::get_scores(dataset_spec) |>
   mutate(dataset_name = ifelse(dataset == "pilot_uniandes_co_rural_processed:bxgv:v3_0", 
                                "rural", "bogota"))
 

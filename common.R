@@ -142,7 +142,7 @@ load_levante_scores <- function(refresh = FALSE,
   ref <- if (version == "current") "levante_data_latest"
          else glue("levante_data_latest:e9pf:{version}")
 
-  out <- levantemodels::get_scores(ref) |>
+  out <- levante::get_scores(ref) |>
     label_levante_scores()
 
   write_rds(out, cache_path)
@@ -168,7 +168,7 @@ load_levante_trials <- function(task_ids = NULL, refresh = FALSE,
   } else {
     ref <- if (version == "current") "levante_data_latest"
            else glue("levante_data_latest:e9pf:{version}")
-    out <- levantemodels::get_trials(ref)
+    out <- levante::get_trials(ref)
     write_rds(out, cache_path)
   }
   # Apply labels every time (label_levante_scores is idempotent enough)
