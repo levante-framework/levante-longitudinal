@@ -4681,12 +4681,12 @@
       "Author": "Michael Frank [aut] (ORCID: <https://orcid.org/0000-0002-7551-4378>), Mika Braginsky [aut, cre] (ORCID: <https://orcid.org/0000-0001-9039-3220>), Theresa Cheng [ctb] (ORCID: <https://orcid.org/0000-0002-8557-565X>)",
       "Maintainer": "Mika Braginsky <mika.br@gmail.com>",
       "RemoteType": "github",
+      "Remotes": "levante=levante-framework/levante-r, redivis=redivis/redivis-r",
       "RemoteHost": "api.github.com",
       "RemoteUsername": "levante-framework",
       "RemoteRepo": "levantemodels",
       "RemoteRef": "main",
-      "RemoteSha": "2c696cd9f604f5674bc016539df9ce31b5f4717b",
-      "Remotes": "levante=levante-framework/levante-r, redivis=redivis/redivis-r"
+      "RemoteSha": "8aea1d64bc526e871eab72d90a6314414fa50625"
     },
     "lifecycle": {
       "Package": "lifecycle",
