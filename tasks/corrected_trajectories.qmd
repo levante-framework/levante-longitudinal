@@ -48,7 +48,7 @@ cells <- tribble(
 rescore_cell <- function(task_id, tk, dataset, model_file, ...) {
   mod_rec <- read_rds(here::here("data", model_file))
   tr <- load_levante_trials(task_ids = task_id) |> filter(dataset == !!dataset)
-  score_with_method(tr, tk, dataset, method = "EAP", mod_rec = mod_rec) |>
+  score_task_irt(tr, tk, dataset, mod_rec, method = "EAP") |>
     transmute(run_id, score_corrected = score)
 }
 

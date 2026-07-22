@@ -13,7 +13,7 @@ datasets <- c("pilot_uniandes_co_bogota", "pilot_mpieva_de_main")
 # corrected EAP per dataset
 corrected <- map_dfr(datasets, function(ds) {
   tr <- load_levante_trials(task_ids = "egma-math") |> filter(dataset == ds)
-  score_with_method(tr, "math", ds, method = "EAP", mod_rec = mr_math) |>
+  score_task_irt(tr, "math", ds, mr_math, method = "EAP") |>
     transmute(run_id, score_corrected = pmin(pmax(score, -6), 6))
 })
 
