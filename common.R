@@ -179,47 +179,48 @@ load_levante_trials <- function(task_ids = NULL, refresh = FALSE,
 
 # ---- Rescoring with the production mirt model -------------------------------
 #
-# Mirror of levantemodels:::score_irt but parameterized by fscores method so we can
-# compare EAP (the pipeline default) against ML on the same data and model.
-#
-# Returns a tibble with one row per run_id: { score, score_se, method }.
-score_with_method <- function(trials, task, dataset, method = "EAP",
-                              scoring_table = NULL, registry_table = NULL,
-                              mod_rec = NULL) {
-  if (!requireNamespace("mirt", quietly = TRUE)) {
-    stop("Install the mirt R package to use score_with_method().")
-  }
-  # Prefer the disk-cached metadata tables (data/*_cache.rds) so notebooks
-  # render without live Redivis calls; fall back to fetching.
+# Thin wrapper around levantemodels::score_irt(): looks up the model spec for
+# a task/dataset, filters + recodes the raw trials, and delegates scoring
+# (including EAP/ML estimation) entirely to the package. Use this when you
+# only have raw trials + a task/dataset pair and want to avoid repeating the
+# spec-lookup/filter/recode boilerplate at each call site.
+score_task_irt <- function(trials, task, dataset, mod_rec, method = "EAP",
+                           scoring_table = NULL) {
+  # Prefer the disk-cached scoring table so notebooks render without live
+  # Redivis calls; fall back to fetching.
   if (is.null(scoring_table)) {
     st_cache <- here::here("data/scoring_table_cache.rds")
     scoring_table <- if (file.exists(st_cache)) readRDS(st_cache)
                      else levantemodels::fetch_scoring_table()
   }
-  if (is.null(registry_table) && is.null(mod_rec)) {
-    rt_cache <- here::here("data/registry_table_cache.rds")
-    registry_table <- if (file.exists(rt_cache)) readRDS(rt_cache)
-                      else levantemodels::fetch_registry_table()
-  }
-  spec <- levantemodels:::get_model_spec(task, dataset, scoring_table)
-  if (is.null(mod_rec)) mod_rec <- levantemodels:::get_model_record(spec, registry_table)
-
+  spec <- levantemodels::get_model_spec(task, dataset, scoring_table)
   trials_task <- trials |> filter(task_id == spec$task_id | item_task == spec$item_task)
   recoded     <- levantemodels::recode_trials(trials_task)
+  levantemodels::score_irt(recoded, as.list(spec), mod_rec, method = method)
+}
 
-  data_filtered <- levantemodels:::dedupe_items(recoded |> rename(group = "site"))
+# ---- Reproducing the pre-fix score_irt() column-order bug -------------------
+#
+# levantemodels::score_irt() had a bug, fixed in PR #9
+# (https://github.com/levante-framework/levantemodels/pull/9): mirt::fscores()
+# matches response.pattern columns to the model's items by position, not by
+# name, and score_irt() built data_aligned as [overlap items in data order]
+# ++ [missing items] without reordering to items(mod_rec) before scoring. The
+# installed package no longer has this bug, so to demonstrate its effect on
+# scores we reproduce the old behavior here: this is score_irt()'s current
+# logic with the column-reorder step removed. For historical comparison only
+# -- not for general scoring use.
+score_irt_buggy <- function(trial_data_task, mod_spec, mod_rec) {
+  data_filtered <- trial_data_task |> rename(group = "dataset") |> levantemodels:::dedupe_items()
   data_wide     <- levantemodels:::to_mirt_shape_grouped(data_filtered)
   data_prepped  <- data_wide |> select(-"group")
   groups        <- data_wide |> pull("group")
   data_group    <- unique(groups)
-  # Mirror score_irt's group handling: only intervene when the data group is
-  # absent from the model AND the model has an invariance type (multigroup).
-  # Single-group by_language models have invariance = NA and ignore data_group
-  # entirely (the SingleGroupClass branch below uses mirt() without a group).
+
   if (any(!(data_group %in% mod_rec@group_names))) {
-    if (!is.na(spec$invariance) && spec$invariance %in% c("metric", "configural")) {
-      stop("metric/configural model requires all data groups to be in the model.")
-    } else if (!is.na(spec$invariance) && spec$invariance == "scalar") {
+    if (!is.na(mod_spec$invariance) && mod_spec$invariance %in% c("metric", "configural")) {
+      return(NULL)
+    } else if (!is.na(mod_spec$invariance) && mod_spec$invariance == "scalar") {
       data_group <- mod_rec@group_names[[1]]
     }
   }
@@ -228,10 +229,7 @@ score_with_method <- function(trials, task, dataset, method = "EAP",
   data_aligned  <- data_prepped |> select(all_of(overlap_items))
   missing_items <- setdiff(levantemodels::items(mod_rec), colnames(data_prepped))
   data_aligned[, missing_items] <- NA
-  # CRITICAL: reorder columns to match the model's item order. Without this,
-  # mirt::fscores can mismatch response.pattern columns to the model by
-  # position, producing wildly wrong θ estimates for some kids.
-  data_aligned <- data_aligned[, levantemodels::items(mod_rec)]
+  # <- the bug: no reordering of data_aligned to items(mod_rec) here
 
   mod_vals <- levantemodels::model_vals(mod_rec)
   if (levantemodels::model_class(mod_rec) == "MultipleGroupClass") {
@@ -242,18 +240,11 @@ score_with_method <- function(trials, task, dataset, method = "EAP",
     mod <- mirt::mirt(data = mod_rec@data, pars = mod_vals, TOL = NaN)
   }
 
-  fs <- mirt::fscores(mod, method = method, response.pattern = data_aligned)
-  raw_score <- as.numeric(fs[, "F1"])
-  # ML can return ±Inf or extreme values for boundary patterns (all correct /
-  # all incorrect, or thin information). Clip at ±6 to match the bounded
-  # MLE convention used in the hand-rolled diagnostic.
-  clipped <- pmin(pmax(raw_score, -6), 6)
+  fs <- mirt::fscores(mod, method = "EAP", response.pattern = data_aligned)
   tibble::tibble(
     run_id   = rownames(data_prepped),
-    score_raw = raw_score,
-    score    = clipped,
-    score_se = as.numeric(fs[, "SE_F1"]),
-    method   = method
+    score    = as.numeric(fs[, "F1"]),
+    score_se = as.numeric(fs[, "SE_F1"])
   )
 }
 

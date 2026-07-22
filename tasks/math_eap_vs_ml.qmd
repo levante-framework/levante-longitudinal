@@ -19,13 +19,23 @@ execute:
 Mike asked for a side-by-side EAP vs ML rescoring of Bogotá math, expecting
 that ML would remove apparent T2 compression due to EAP shrinkage. The
 investigation surfaced something more substantive: **`levantemodels::score_irt`
-has a column-order bug** that produces wrong θ estimates whenever the
-`response.pattern` passed to `mirt::fscores()` has its item columns in a
+had a column-order bug** that produced wrong θ estimates whenever the
+`response.pattern` passed to `mirt::fscores()` had its item columns in a
 different order from the model's internal item order. When we fix the
 column ordering, the Bogotá math T1 → T2 picture changes from heavy
 "regression to the mean" (Galton slope ≈ 0.19) to broad-based growth across
 all four T1 quartiles (Galton slope ≈ 0.81). EAP-vs-ML matters much less
 than the column fix.
+
+**Update:** this bug was fixed upstream in `levantemodels::score_irt` by
+[PR #9](https://github.com/levante-framework/levantemodels/pull/9), so the
+installed package no longer reproduces it. To keep the comparison below
+intact, we reproduce the pre-fix behavior locally as `score_irt_buggy()`
+(defined in `common.R`) — a copy of `score_irt()`'s current logic with the
+column-reorder step removed — and compare it against the current, fixed
+`levantemodels::score_irt()`. `score_irt()` also now takes a `method`
+argument, so EAP and ML scores both come straight from the package rather
+than a local reimplementation.
 
 ```{r setup}
 source(here::here("common.R"))
@@ -75,25 +85,28 @@ tibble(
                   caption = "Same kid, same response data, three column layouts.")
 ```
 
-# The bug is in `levantemodels::score_irt`
+# The bug was in `levantemodels::score_irt`
 
-`score_irt` aligns missing items by appending them to `data_prepped`'s
-existing columns, but never reorders to match `items(mod_rec)`:
+`score_irt` aligned missing items by appending them to `data_prepped`'s
+existing columns, but never reordered to match `items(mod_rec)`:
 
 ```{r show-the-bug, eval=FALSE}
-# Verbatim from levantemodels:::score_irt
+# Verbatim from levantemodels::score_irt before PR #9
+# (https://github.com/levante-framework/levantemodels/pull/9)
 overlap_items <- intersect(colnames(data_prepped), items(mod_rec))
 data_aligned  <- select(data_prepped, !!overlap_items)
 missing_items <- setdiff(items(mod_rec), colnames(data_prepped))
 data_aligned[, missing_items] <- NA
 # ↑ at this point, data_aligned columns are
 #   [overlap_items_in_data_prepped_order, missing_items_in_setdiff_order]
-# which is NOT items(mod_rec) order. The fix:
-data_aligned <- data_aligned[, items(mod_rec)]   # <-- missing in levantemodels
+# which is NOT items(mod_rec) order. The fix, added in PR #9:
+data_aligned <- data_aligned[, items(mod_rec)]   # <-- was missing before PR #9
 scores <- mirt::fscores(mod, method = "EAP", response.pattern = data_aligned)
 ```
 
-Our local `score_with_method()` in `common.R` adds that one line.
+Our local `score_irt_buggy()` in `common.R` reproduces the pre-fix behavior
+(everything above minus that reorder line) so we can still compare against it
+now that the installed package is fixed.
 
 # Pipeline vs corrected vs uncorrected: do they agree?
 
@@ -101,14 +114,15 @@ Our local `score_with_method()` in `common.R` adds that one line.
 co_trials <- trials |> filter(dataset == "pilot_uniandes_co_bogota")
 co_recoded <- recode_trials(co_trials)
 
-# 1) Corrected EAP (our score_with_method)
-my_eap <- score_with_method(co_trials, "math", "pilot_uniandes_co_bogota",
-                             method = "EAP", mod_rec = mod_rec)
-my_ml  <- score_with_method(co_trials, "math", "pilot_uniandes_co_bogota",
-                             method = "ML",  mod_rec = mod_rec)
+# 1) Corrected EAP / ML: current (fixed) levantemodels::score_irt
+my_eap <- levantemodels::score_irt(co_recoded, as.list(spec), mod_rec, method = "EAP") |>
+  transmute(run_id, score = as.numeric(score))
+my_ml  <- levantemodels::score_irt(co_recoded, as.list(spec), mod_rec, method = "ML") |>
+  transmute(run_id, score = as.numeric(score))
 
-# 2) Uncorrected: call levantemodels's own score_irt
-official <- levantemodels:::score_irt(co_recoded, as.list(spec), mod_rec) |>
+# 2) Buggy: reproduce the pre-PR#9 score_irt() column-order bug locally
+# (the installed package no longer has this bug)
+official <- score_irt_buggy(co_recoded, as.list(spec), mod_rec) |>
   transmute(run_id, official_score_irt = as.numeric(score))
 
 # 3) Published pipeline scores (from levante_data_latest)
@@ -126,18 +140,20 @@ all3 <- pipeline |>
 all3 |>
   filter(!is.na(my_eap), !is.na(official_score_irt)) |>
   summarise(
-    `pipeline ↔ levantemodels::score_irt`    = cor(pipeline_score, official_score_irt),
-    `pipeline ↔ corrected EAP`          = cor(pipeline_score, my_eap),
-    `levantemodels::score_irt ↔ corrected EAP` = cor(official_score_irt, my_eap),
-    `corrected EAP ↔ corrected ML`      = cor(my_eap, my_ml)
+    `pipeline ↔ buggy score_irt (reproduced)`    = cor(pipeline_score, official_score_irt),
+    `pipeline ↔ corrected EAP`                   = cor(pipeline_score, my_eap),
+    `buggy score_irt (reproduced) ↔ corrected EAP` = cor(official_score_irt, my_eap),
+    `corrected EAP ↔ corrected ML`                = cor(my_eap, my_ml)
   ) |>
   knitr::kable(digits = 3,
                caption = "Pearson r across scoring approaches")
 ```
 
-The published pipeline scores match `levantemodels::score_irt` (r = 0.95) but
-disagree with the corrected EAP (r = 0.75) — confirming the bug propagated
-into the published scores.
+The published pipeline scores match the reproduced buggy `score_irt` (r =
+0.95) but disagree with the corrected EAP (r = 0.75) — confirming the
+published scores were computed under the same bug (now fixed upstream in
+`levantemodels::score_irt`, but not yet reflected in `levante_data_latest`
+unless it has been rescored since PR #9).
 
 # Wave-paired rescore data
 
@@ -285,16 +301,17 @@ write_rds(all3,   here::here("data", "math_co_all_scoring_approaches.rds"))
 
 # Conclusions
 
-1.  **`levantemodels::score_irt` has a column-order bug.** When the
-    `response.pattern` data frame's columns are not in `items(mod_rec)`
-    order, `mirt::fscores()` matches by position and returns wrong θs. A
-    one-line fix is enough: reorder `data_aligned` to match
-    `items(mod_rec)` before calling `fscores`.
+1.  **`levantemodels::score_irt` had a column-order bug**, now fixed in
+    [PR #9](https://github.com/levante-framework/levantemodels/pull/9). When
+    the `response.pattern` data frame's columns were not in `items(mod_rec)`
+    order, `mirt::fscores()` matched by position and returned wrong θs; the
+    fix reorders `data_aligned` to match `items(mod_rec)` before calling
+    `fscores`.
 
-2.  **This bug has propagated into the published math scores** for Bogotá
+2.  **This bug propagated into the published math scores** for Bogotá
     (and presumably every dataset/task scored by the same code path). The
-    published pipeline score correlates with `levantemodels::score_irt` (r =
-    0.95) but disagrees with the corrected EAP (r = 0.75).
+    published pipeline score correlates with the reproduced buggy `score_irt`
+    (r = 0.95) but disagrees with the corrected EAP (r = 0.75).
 
 3.  **Under corrected scoring, the apparent T1 → T2 compression for Bogotá
     math largely disappears.** Galton slope goes from 0.19 (pipeline) to
@@ -307,11 +324,11 @@ write_rds(all3,   here::here("data", "math_co_all_scoring_approaches.rds"))
     patterns. The original story that "EAP shrinkage is the problem" was
     confounded with the bug.
 
-5.  **Suggested action for the DCC**: patch `levantemodels::score_irt` to
-    reorder `data_aligned` columns before calling `mirt::fscores`. Then
-    rescore the math (and likely every IRT task) scores in
-    `levante_data_latest`. We expect non-trivial revisions to the
-    cross-sectional and longitudinal math story at Bogotá.
+5.  **Remaining action**: `levantemodels::score_irt` itself is now fixed, but
+    unless `levante_data_latest` has been rescored since PR #9, the published
+    pipeline scores still reflect the pre-fix behavior. Rescore the math (and
+    likely every IRT task) in `levante_data_latest`. We expect non-trivial
+    revisions to the cross-sectional and longitudinal math story at Bogotá.
 
 6.  **For the LEVANTE longitudinal project specifically**: 02 and 03
     should use the corrected scores

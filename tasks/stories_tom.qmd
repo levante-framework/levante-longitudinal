@@ -67,8 +67,12 @@ The task contains `r sum(meta$is_control)` reality-check (control) items and
 # 1. Rescoring (bug fix) and longitudinal consistency
 
 The IRT scoring path had a column-order bug (see
-`reports/rlevante_handoff.md`). We rescore ToM correctly and validate against
-each model's calibration-time scores.
+`reports/rlevante_handoff.md`), fixed upstream in `levantemodels::score_irt`
+by [PR #9](https://github.com/levante-framework/levantemodels/pull/9). The
+installed package no longer has this bug, so "buggy" below is reproduced
+locally via `score_irt_buggy()` (in `common.R`) to keep the comparison
+meaningful. We rescore ToM correctly (via `levantemodels::score_irt()`
+directly) and validate against each model's calibration-time scores.
 
 ```{r rescore, cache=TRUE}
 mods <- list("pilot_mpieva_de_main"     = read_rds(here::here("data/tom_model_de-DE_v1_14.rds")),
@@ -76,13 +80,14 @@ mods <- list("pilot_mpieva_de_main"     = read_rds(here::here("data/tom_model_de
              "pilot_western_ca_main"    = read_rds(here::here("data/tom_model_en-US_v1_14.rds")))
 
 corrected <- imap_dfr(mods, function(mr, ds) {
-  trd <- load_levante_trials(task_ids = "theory-of-mind") |> filter(dataset == ds)
+  trd     <- load_levante_trials(task_ids = "theory-of-mind") |> filter(dataset == ds)
+  spec    <- levantemodels::get_model_spec("tom", ds,
+               read_rds(here::here("data/scoring_table_cache.rds")))
+  recoded <- recode_trials(trd)
   gold <- as.data.frame(mr@scores) |> select(run_id, gold = ability)
-  fixed <- score_with_method(trd, "tom", ds, method = "EAP", mod_rec = mr) |>
+  fixed <- levantemodels::score_irt(recoded, as.list(spec), mr, method = "EAP") |>
     select(run_id, corrected = score, se = score_se)
-  buggy <- levantemodels:::score_irt(recode_trials(trd),
-            as.list(levantemodels:::get_model_spec("tom", ds,
-              read_rds(here::here("data/scoring_table_cache.rds")))), mr) |>
+  buggy <- score_irt_buggy(recoded, as.list(spec), mr) |>
     transmute(run_id, buggy = as.numeric(score))
   fixed |> left_join(buggy, by="run_id") |> left_join(gold, by="run_id") |>
     mutate(dataset = ds)
