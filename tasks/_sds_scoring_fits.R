@@ -3,12 +3,13 @@
 # Written by Claude Code (Anthropic), directed by Mike Frank, July 2026.
 # Ported from levante-pilots/03_explore_tasks/blockCAT/sds/model_tree_mirt/
 # (_fit_sds_report_models.R, _fit_sds_extensions.R, _audit_recode.R,
-# _replicate_hackathon.R), re-based on the unified hackathon dataset
-# (levante_data_pilots_hackathon:fpx0:v1_1, via tasks/_pull_sds_hackathon.R).
+# _replicate_hackathon.R), re-based on the model calibration dataset
+# (levante-pilots/01_fetched_data/task_data_nested.rds, same source used by
+# tasks/mrot/).
 #
 # Everything caches to data/sds_scoring/ — delete that dir to recompute.
-# Runtime from scratch: ~30-40 min (the 3-factor tree and the Monte Carlo
-# validation dominate).
+# Runtime from scratch: ~15-20 min (the 3-factor tree and the multigroup
+# fits dominate).
 #
 # Two independent recode implementations are run and cross-validated:
 #   A. a direct port of the levante-pilots `_recode_sds.R` logic (JSON parsing
@@ -28,11 +29,10 @@ data_dir <- here::here("data")
 cache_dir <- file.path(data_dir, "sds_scoring")
 dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
 
-trials_file <- file.path(data_dir, "hackathon_v1_1_trials_sds.rds")
-if (!file.exists(trials_file)) {
-  stop("Run tasks/_pull_sds_hackathon.R first (requires Redivis auth).")
-}
-raw <- read_rds(trials_file)
+pilots_data_dir <- here::here("..", "levante-pilots", "01_fetched_data")
+raw <- read_rds(file.path(pilots_data_dir, "task_data_nested.rds")) |>
+  filter(item_task == "sds") |>
+  unnest(data)
 
 # ============================================================================
 # Recode A: port of _recode_sds.R (levantemodels semantics)

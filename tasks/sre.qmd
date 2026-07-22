@@ -39,18 +39,25 @@ i.e. it truncates at the first 180 **trials**, not 180 **seconds**. (The
    (drift-diffusion IRT and alternatives) plus an EZ-diffusion proof of
    concept on the trial data.
 
-Data: **`levante_data_pilots_hackathon:fpx0:v1_1`** via the new `levante`
-package, cached by [`tasks/_pull_sre_hackathon.R`](\_pull_sre_hackathon.R).
+Data: the model calibration dataset
+(**`../levante-pilots/01_fetched_data/task_data_nested.rds`**, the same
+source used by `tasks/mrot/`), plus age from `run_data.rds` and
+PA/SWR/Vocab/TROG validity criteria from the pre-computed
+`../levante-pilots/02_scoring_outputs/scores/registry_scores.rds`
+(`model_set == "by_language"`, `itemtype == "rasch"`).
 
 ```{r setup}
 source(here::here("common.R"))
 
-trials_file <- here("data/hackathon_v1_1_trials_roar.rds")
-if (!file.exists(trials_file))
-  stop("Run tasks/_pull_sre_hackathon.R first (requires Redivis auth).")
+pilots_data_dir <- here("..", "levante-pilots", "01_fetched_data")
+task_data_nested <- read_rds(file.path(pilots_data_dir, "task_data_nested.rds"))
+run_data <- read_rds(file.path(pilots_data_dir, "run_data.rds"))
+participants <- read_rds(file.path(pilots_data_dir, "participants.rds"))
 
-tr_all <- read_rds(trials_file)
-sc_all <- read_rds(here("data/hackathon_v1_1_scores.rds"))
+registry_scores <- read_rds(here("..", "levante-pilots", "02_scoring_outputs",
+                                  "scores", "registry_scores.rds")) |>
+  filter(model_set == "by_language", itemtype == "rasch") |>
+  select(task, run_id, ability)
 
 dataset_pal <- set_names(
   RColorBrewer::brewer.pal(4, "Set1"),
@@ -61,15 +68,20 @@ label_dataset <- \(df) df |>
   mutate(dataset_label = factor(dataset_labels_named[dataset],
                                 levels = names(dataset_pal)))
 
-sre <- tr_all |>
-  filter(task_id == "sre") |>
+sre <- task_data_nested |>
+  filter(item_task == "sre") |>
+  unnest(data) |>
   mutate(correct = as.logical(correct),
          rt_s = rt_numeric / 1000,
          corpus = sub("_[0-9]+$", "", item_uid) |> str_remove("^sre_")) |>
   label_dataset()
 
-sre_scores_pub <- sc_all |>
-  filter(task_id == "sre", !is.na(score)) |>
+# no independent published SRE score exists in the calibration dataset (that
+# was `sc_all$score` from the hackathon `get_scores()` pull) -- run metadata
+# (age, time_started) comes from run_data instead
+sre_scores_pub <- sre |>
+  distinct(dataset, run_id, user_id) |>
+  left_join(run_data |> select(run_id, age, time_started), by = "run_id") |>
   label_dataset()
 ```
 
@@ -78,7 +90,7 @@ sre |>
   group_by(dataset_label) |>
   summarise(runs = n_distinct(run_id), children = n_distinct(user_id),
             trials = n(), .groups = "drop") |>
-  knitr::kable(caption = "SRE trial data by dataset (hackathon v1_1)")
+  knitr::kable(caption = "SRE trial data by dataset (model calibration dataset)")
 ```
 
 # 1. Timing forensics: is 180 seconds always 180 seconds?
@@ -128,7 +140,7 @@ Three regularities:
   ~160–165 s (the remainder is inter-trial overhead: wall-clock span medians
   ~180 s). So the timer fires on schedule for most runs.
 - **A left tail of short runs exists everywhere** — Colombia especially (rural
-  5th percentile ≈ 87 s of reading time). Under the current rule these
+  5th percentile ≈ 89 s of reading time). Under the current rule these
   short runs are scored as if the child had the full window.
 - **Canada (Western) has genuinely double-length runs.**
 
@@ -167,7 +179,7 @@ run_time |>
 ```
 
 **Side-quest verdict:** the first-180-*trials* filter is a no-op for Germany
-and Colombia (no run exceeds 180 trials — max 140). It bites only in Canada
+and Colombia (no run exceeds 180 trials — max 133). It bites only in Canada
 (`r sum(run_time$n_trials > 180)` runs exceed 180 trials, max
 `r max(run_time$n_trials)`), and there it truncates arbitrarily *across* the
 two-block structure. Meanwhile the actual problem is the reverse: **effective
@@ -188,6 +200,12 @@ excluded from rate scoring (extrapolation too aggressive).
 
 First, verify we can reproduce the published (buggy) scores exactly:
 
+The calibration dataset has no separately-computed production SRE score to
+reproduce-check against (the hackathon pull's `sc_all$score` had no
+counterpart here), so `score_old` below is simply the current buggy rule
+(`filter(trial_number <= 180)`, `(C - I)` z-scored within dataset) applied
+directly to the trial data.
+
 ```{r replicate-published}
 old_score <- sre |>
   group_by(dataset, run_id) |>
@@ -196,13 +214,6 @@ old_score <- sre |>
   group_by(dataset) |>
   mutate(score_old = scale(net)[, 1]) |>
   ungroup()
-
-old_score |>
-  inner_join(sre_scores_pub, by = c("dataset", "run_id")) |>
-  group_by(dataset_label) |>
-  summarise(n = n(), r_with_published = cor(score_old, score), .groups = "drop") |>
-  knitr::kable(digits = 3,
-               caption = "Local reimplementation of the current rule vs published scores (r ≈ 1; residual differences come from a few scored runs with no rows in the trials table, which shift the z-scale slightly)")
 ```
 
 ```{r corrected-score}
@@ -282,11 +293,14 @@ first_run <- \(df) df |>
   slice(1) |>
   ungroup()
 
-pa_swr <- sc_all |>
-  filter(task_id %in% c("pa", "swr"), !is.na(score)) |>
+pa_swr <- registry_scores |>
+  filter(task %in% c("pa", "swr"), !is.na(ability)) |>
+  left_join(run_data |> select(run_id, user_id, time_started), by = "run_id") |>
+  left_join(participants |> select(user_id, dataset), by = "user_id") |>
+  filter(!is.na(dataset)) |>
   first_run() |>
-  select(dataset, user_id, task_id, other = score) |>
-  pivot_wider(names_from = task_id, values_from = other)
+  select(dataset, user_id, task, other = ability) |>
+  pivot_wider(names_from = task, values_from = other)
 
 sre_first <- sre_scores_pub |>
   first_run() |>
@@ -702,14 +716,27 @@ tibble(n_pairs = nrow(sa_stab),
 ```
 
 The decomposition is diagnostic gold but scoring lead. The ability–speed
-correlation flips sign across sites (≈ 0 in DE/Canada, −.23 Bogotá, **−.52
+correlation flips sign across sites (≈ 0 in DE/Canada, −.08 Bogotá, **−.43
 rural CO**): where fast guessing is common, the "speed" dimension is
 contaminated by disengagement, so neither τ nor any fixed θ+τ composite
 travels across sites. The composite matches the rate score where behavior is
 clean (r ≈ .9 in DE/Canada) and underperforms it where it isn't (rural age
-validity .28 vs .42; Bogotá stability .68 vs .72).
+validity .30 vs .44; Bogotá stability .71 vs .74).
 
 ## Diffusion IRT (pooled brms Wiener model)
+
+::: {.callout-warning}
+## Stale: fit on the retired hackathon dataset
+This section's results (`data/sre_ddm_estimates.rds`) were fit on the
+hackathon dataset (`levante_data_pilots_hackathon:fpx0:v1_1`), not on the
+model calibration dataset the rest of this notebook now uses, and that cache
+isn't present in this environment. A 9.5-hour Sherlock refit wasn't rerun as
+part of the switchover, so the numbers below (where they render at all) are
+from the old data stack and should be treated as illustrative of the
+*modeling approach*, not as current SRE scores. Everything else in this
+notebook (rate normalization, zero-fill IRT, EZ-diffusion, the hierarchical
+SA model) is fit fresh on the calibration dataset.
+:::
 
 The full model: every trial's (choice, RT) as a Wiener process, with
 dataset fixed effects plus run *and item* random effects on drift (the IRT
@@ -816,18 +843,18 @@ the diffusion decomposition discards stable, valid between-child variance in
 
 **1. The timer is mostly honest, but the trial-count rule was aimed at the
 wrong problem.** The first-180-*trials* filter is a no-op in Germany and
-Colombia (max 140 trials/run) and bites only in Canada. The real
+Colombia (max 133 trials/run) and bites only in Canada. The real
 heterogeneity is in *time*: 20 Canadian runs contain two sequential ~180-s
 blocks (~360 s of testing scored as one window), and there is a left tail of
-short runs everywhere (rural Colombia 5th percentile ≈ 87 s of reading time)
+short runs everywhere (rural Colombia 5th percentile ≈ 89 s of reading time)
 that the current rule scores as if they had the full window.
 
 **2. Rate normalization changes little in aggregate, a lot for specific
-kids.** Corrected-vs-current r ≈ .997 (DE), .975–.978 (CO), but **.82 in
-Canada** (mean |Δ| = 0.45 z there; the double-block runs drop, short runs
+kids.** Corrected-vs-current r ≈ .99 (DE, both Colombia sites), but **.82 in
+Canada** (mean |Δ| = 0.44 z there; the double-block runs drop, short runs
 rise). Validity correlations with age/PA/SWR move by |Δr| ≤ .03 everywhere
-except Canadian age validity, which improves (.32 → .39); Bogotá 16-month
-stability ticks up (.70 → .72). So the correction is about **fairness of
+except Canadian age validity, which improves (.36 → .46); Bogotá 16-month
+stability ticks up (.71 → .74). So the correction is about **fairness of
 individual scores** (especially any longitudinal use of the Canadian data),
 not about rescuing aggregate structure — which was already fine.
 
@@ -839,14 +866,16 @@ all methods on every available metric.
 ## Scoreboard: every method × every metric
 
 Validity columns are n-weighted means of within-dataset correlations
-(criteria from the hackathon scores: PA/SWR/Vocab/TROG θ, first run per
-child). Reliability uses the best available estimator per method:
-odd/even-trial split-half with Spearman–Brown for the trial-computable
-scores (rate, EZ), model-based empirical reliability for the latent-score
-methods (zero-fill: mirt EAP r~xx~; SA/DDM: var(θ̂)/(var(θ̂)+mean(SE²))).
-Germany test–retest uses `levante_data_latest` v1_2 (the hackathon subset
-has no DE repeats): n = 23 pairs at ~3.6 months, rescored per method (DDM
-would need a full refit — left blank).
+(criteria from `registry_scores.rds`: PA/SWR/Vocab/TROG by-language Rasch θ,
+first run per child). Reliability uses the best available estimator per
+method: odd/even-trial split-half with Spearman–Brown for the
+trial-computable scores (rate, EZ), model-based empirical reliability for
+the latent-score methods (zero-fill: mirt EAP r~xx~; SA/DDM:
+var(θ̂)/(var(θ̂)+mean(SE²))). Germany test–retest uses `levante_data_latest`
+v1_2 (the calibration dataset has no DE repeats): n = 23 pairs at ~3.6
+months, rescored per method (DDM would need a full refit — left blank; that
+DE retest cache isn't present in this environment, so the column below
+renders as NA).
 
 ```{r scoreboard-methods}
 # one frame of run-level scores for every method, z within dataset
@@ -872,11 +901,14 @@ method_levels <- intersect(
   names(methods_run))
 
 # criteria: age + other language/reading tasks (first run per child)
-crit_wide <- sc_all |>
-  filter(task_id %in% c("pa", "swr", "vocab", "trog"), !is.na(score)) |>
+crit_wide <- registry_scores |>
+  filter(task %in% c("pa", "swr", "vocab", "trog"), !is.na(ability)) |>
+  left_join(run_data |> select(run_id, user_id, time_started), by = "run_id") |>
+  left_join(participants |> select(user_id, dataset), by = "user_id") |>
+  filter(!is.na(dataset)) |>
   first_run() |>
-  select(dataset, user_id, task_id, crit_score = score) |>
-  pivot_wider(names_from = task_id, values_from = crit_score)
+  select(dataset, user_id, task, crit_score = ability) |>
+  pivot_wider(names_from = task, values_from = crit_score)
 
 board <- sre_scores_pub |>
   first_run() |>
@@ -960,9 +992,14 @@ reliability <- tibble(
                "split-half (SB)"))
 ```
 
-```{r scoreboard-retest}
+```{r de-retest-check}
+de_retest_file <- here("data/sre_de_retest_v1_2.rds")
+has_de_retest <- file.exists(de_retest_file)
+```
+
+```{r scoreboard-retest, eval=has_de_retest}
 # Germany test-retest, levante_data_latest v1_2 (n=23 pairs, ~3.6 months)
-de <- read_rds(here("data/sre_de_retest_v1_2.rds"))
+de <- read_rds(de_retest_file)
 de_tr <- de$trials |>
   mutate(correct = as.logical(correct), rt_s = rt_numeric / 1000)
 
@@ -971,10 +1008,10 @@ de_scores <- de_tr |>
   summarise(rate = (sum(correct) - sum(!correct)) / sum(rt_s) * 180,
             .groups = "drop")
 
-# zero-fill: score with the hackathon-calibrated DE Rasch model.
-# Matrix starts at 0 (unreached AND wrong both 0); set the correct
-# responses to 1. Columns follow the model's item order — fscores'
-# response.pattern matches by POSITION.
+# zero-fill: score with the calibration-fit DE Rasch model. Matrix starts
+# at 0 (unreached AND wrong both 0); set the correct responses to 1.
+# Columns follow the model's item order — fscores' response.pattern
+# matches by POSITION.
 zf_mods <- read_rds(here("data/sre_zerofill_models.rds"))
 de_items <- mirt::extract.mirt(zf_mods$de, "itemnames")
 de_resp <- matrix(0L, nrow(de_scores), length(de_items),
@@ -1033,6 +1070,15 @@ retest_de <- tibble(
                     use = "complete.obs")))
 ```
 
+```{r scoreboard-retest-fallback, eval=!has_de_retest}
+# data/sre_de_retest_v1_2.rds isn't present in this environment (it's a
+# bespoke levante_data_latest v1_2 pull, unrelated to the pilots calibration
+# data used elsewhere in this notebook) -- report NA rather than fail
+retest_de <- tibble(method = c("rate", "zerofill", "sa_composite", "ddm_drift",
+                               "ez_drift"),
+                    retest_de = NA_real_)
+```
+
 ```{r scoreboard-stability}
 stab_bog <- sre_scores_pub |>
   filter(dataset == "pilot_uniandes_co_bogota") |>
@@ -1078,43 +1124,44 @@ knitr::kable(scoreboard, digits = 2,
              caption = "Scoring-method scoreboard. Validity = n-weighted mean within-dataset r; all scores z within dataset.")
 ```
 
-Reading the scoreboard:
+Reading the scoreboard (Diffusion-IRT drift doesn't appear — see the stale
+-data callout above; DE retest is NA for every method because that cache
+isn't present in this environment):
 
-- **The corrected rate wins everything that matters for a primary score.**
-  Best or tied on age (.50), PA (.48), SWR (.57), best on both
-  repeat-administration metrics (DE 3.6-month retest **.83**; Bogotá
-  16-month stability .72), with an honest split-half reliability of .83.
-- **One real nuance: speed-purged scores track untimed *comprehension*
-  slightly better.** Diffusion-IRT drift has the best TROG correlation
-  (.50 vs .44 for rate) and drift/SA edge the rate score on Vocab —
-  while the rate score wins on the reading-efficiency-adjacent criteria
-  (SWR, PA, age). That is a sensible division of labor: drift isolates
-  processing efficiency (closer to language knowledge), while the rate
-  score's pacing component is signal for reading fluency specifically.
-  It validates drift as a *research* variable without changing the
-  scoring recommendation.
-- **Zero-fill's high nominal reliability (.88) is partly an artifact**:
-  the deterministic block of zeros is "reliable" in the r~xx~ sense
-  without being valid — it posts the worst validity column of any method
-  on TROG (.20) and PA (.31). Reliability estimators also aren't
-  directly comparable across rows (split-half vs model-based).
-- **EZ-diffusion's DE retest of .23** (vs .83 for the rate score on the
-  same 23 children) is the cleanest single demonstration that inverting
-  three summary statistics per run does not produce a usable score.
+- **The corrected rate wins most of what matters for a primary score, but
+  not uniformly.** Best on age (.52), PA (.49), TROG (.47), and split-half
+  reliability (.88); roughly tied with zero-fill and the SA composite on SWR
+  (.57 vs .58/.58). It's edged out on Bogotá 16-month stability by zero-fill
+  (.74 vs **.76**) and clearly beaten on Vocab by the SA composite (.44 vs
+  **.50**).
+- **One real nuance: the SA composite's separately-modeled speed dimension
+  buys real validity on Vocab** (.50 vs .44 for rate) without a
+  comprehension-wide pattern — it doesn't also win TROG (.38 vs rate's .47).
+  It underperforms rate on age, PA, reliability, and stability, so this
+  reads as a research signal worth having a separate θ/τ decomposition
+  available for, not a case for replacing the primary score.
+- **Zero-fill's reliability isn't obviously an inflated artifact here** —
+  it also posts the best Bogotá stability of any method (.76) — but it's
+  still the weakest of the four on TROG (.37 vs .46-.47 for the others),
+  consistent with capturing "how much of the bank a fast, accurate reader
+  reaches" more than construct-general reading efficiency.
+- **EZ-diffusion's Bogotá 16-month stability of .45** (vs .74 for the rate
+  score, same 181-pair subsample) is the cleanest available demonstration
+  that inverting three summary statistics per run does not produce a usable
+  score. (The original DE 3.6-month retest version of this comparison isn't
+  available in this environment.)
 
-Item structure is not the missing ingredient: the full diffusion-IRT fit
-recovers sensible item parameters (item drift effects correlate .52 with
-item accuracy, −.69 with item median RT) and item information lifts drift
-stability from .44 (EZ) to .56 — but still far short of .72. Validity tells
-the same story (e.g. Bogotá age r: rate .60, DDM drift .53; DE age: .54 vs
-.44), with only scattered small wins for model-based scores (DE SWR: DDM
-.62 vs rate .58). The diagnosis: SRE's net rate *is* the behaviorally
-meaningful quantity — it bundles decision efficiency **and** stable
-individual differences in pacing/caution, and every decomposition that
-strips the latter out throws away true-score variance. The site-dependent
-ability–speed correlation (≈ 0 in DE/Canada, −.52 in rural CO, where fast =
-guessing) additionally means no fixed recombination of decomposed parts
-travels across sites.
+The diagnosis: SRE's net rate *is* the behaviorally meaningful quantity — it
+bundles decision efficiency **and** stable individual differences in
+pacing/caution, and every decomposition that strips the latter out (EZ, and
+to a lesser extent the SA composite) loses stability. The site-dependent
+ability–speed correlation (≈ 0 in DE/Canada, −.08 Bogotá, −.43 in rural CO,
+where fast = guessing) additionally means no fixed recombination of
+decomposed parts travels across sites. The diffusion-IRT comparison that
+previously anchored this section (item drift tracking item accuracy/RT,
+drift stability .44→.56, TROG/Vocab wins for drift) was established on the
+retired hackathon data stack and hasn't been re-verified on the calibration
+dataset — see the callout above.
 
 **Recommendations for the DCC:**
 
@@ -1126,16 +1173,20 @@ travels across sites.
   `offset(log(time))`, corpus fixed effects, child random effects) — it is
   rate normalization with standard errors and corpus adjustment, not a new
   scoring philosophy.
-- **Diffusion IRT is now tested, not just argued against: don't use it for
-  the primary SRE score.** The full hierarchical Wiener fit (9.5 h on
-  Sherlock) yields drift scores that are less stable (.56 vs .72) and mostly
-  less valid than the rate score. The decomposition (drift vs boundary vs
-  ndt) remains available in `data/sre_ddm_estimates.rds` for substantive
-  questions about speed–accuracy tradeoff and its development — boundary
-  separation declines with age in every dataset — but that is a research
-  variable, not a score.
+- **Diffusion IRT: treat the prior "don't use it" conclusion as unconfirmed
+  on this data stack, not re-established.** On the retired hackathon data,
+  the full hierarchical Wiener fit (9.5 h on Sherlock) yielded drift scores
+  that were less stable and mostly less valid than the rate score; that fit
+  wasn't rerun here (a 9.5-hour Sherlock job is out of scope for a data-source
+  switchover). What *is* re-confirmed on the calibration dataset is the
+  narrower claim that decomposing rate into separate ability/speed
+  components (EZ-diffusion, the hierarchical SA model) loses test–retest
+  stability relative to the simple rate score — consistent with, but not
+  proof of, the same conclusion for full diffusion IRT. The decomposition
+  remains available in `data/sre_ddm_estimates.rds` (stale) for substantive
+  questions about speed–accuracy tradeoff, not as a score.
 - **Use RT for data quality regardless**: sub-second responses sit at chance
-  and range from 3% of trials (DE) to 31% (rural CO). A fast-guess flag
+  and range from 2% of trials (DE) to 13% (rural CO). A fast-guess flag
   (e.g. proportion of RT < 1 s) is a cheap, useful run-level QC covariate.
 
 Proposed patch to `levantemodels::score_sre()`:

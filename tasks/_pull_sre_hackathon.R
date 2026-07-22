@@ -1,3 +1,10 @@
+# DEPRECATED: tasks/sre.qmd and the _fit_sre_*.R scripts now read SRE trials
+# from the model calibration dataset
+# (../levante-pilots/01_fetched_data/task_data_nested.rds), not from this
+# hackathon pull, and PA/SWR/Vocab/TROG validity criteria from
+# ../levante-pilots/02_scoring_outputs/scores/registry_scores.rds. Kept around
+# in case the hackathon dataset is needed again.
+#
 # Pull SRE / PA / SWR data from the unified hackathon pilots dataset
 # (levante_data_pilots_hackathon:fpx0:v1_1) using the new `levante` package,
 # and cache locally for tasks/sre.qmd. Run once; triggers Redivis OAuth.

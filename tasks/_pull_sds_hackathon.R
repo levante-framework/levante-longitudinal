@@ -1,3 +1,8 @@
+# DEPRECATED: tasks/same_different.qmd and tasks/_sds_scoring_fits.R now read
+# SDS trials from the model calibration dataset
+# (../levante-pilots/01_fetched_data/task_data_nested.rds), not from this
+# hackathon pull. Kept around in case the hackathon dataset is needed again.
+#
 # Pull Same & Different Selection (SDS) trials from the unified hackathon
 # pilots dataset (levante_data_pilots_hackathon:fpx0:v1_1) using the new
 # `levante` package, and cache locally for tasks/same_different.qmd.

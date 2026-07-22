@@ -7,10 +7,13 @@
 
 library(dplyr)
 library(readr)
+library(tidyr)
 library(lme4)
 
-sre <- read_rds(here::here("data/hackathon_v1_1_trials_roar.rds")) |>
-  filter(task_id == "sre") |>
+pilots_data_dir <- here::here("..", "levante-pilots", "01_fetched_data")
+sre <- read_rds(file.path(pilots_data_dir, "task_data_nested.rds")) |>
+  filter(item_task == "sre") |>
+  unnest(data) |>
   mutate(correct = as.logical(correct), rt_s = rt_numeric / 1000) |>
   filter(rt_s >= 0.25, rt_s <= 30)
 

@@ -19,11 +19,11 @@ execute:
 Transferred from the SDS exploration in
 `levante-pilots/03_explore_tasks/blockCAT/sds/` (data prep `_recode_sds.R`;
 modeling `model_poly/`, `model_tree_lmer/`, `model_tree_mirt/`), re-based here
-on the unified hackathon dataset. All artifacts are produced by
+on the model calibration dataset. All artifacts are produced by
 [`tasks/_sds_scoring_fits.R`](_sds_scoring_fits.R) and cached in
-`data/sds_scoring/` — delete that directory to recompute (~35 min).
-Data: **`levante_data_pilots_hackathon:fpx0:v1_1`** via the new `levante`
-package, cached by [`tasks/_pull_sds_hackathon.R`](_pull_sds_hackathon.R).
+`data/sds_scoring/` — delete that directory to recompute (~15-20 min).
+Data: **`../levante-pilots/01_fetched_data/task_data_nested.rds`**
+(`item_task == "sds"`), the same source used by `tasks/mrot/`.
 :::
 
 ```{r setup}
@@ -45,10 +45,14 @@ bug <- read_rds(file.path(cache_dir, "bug.rds"))
 res <- read_rds(file.path(cache_dir, "results.rds"))
 factor_cors <- read_rds(file.path(cache_dir, "factor_cors.rds"))
 
-raw <- read_rds(here("data/hackathon_v1_1_trials_sds.rds"))
-runs_sds <- read_rds(here("data/hackathon_v1_1_scores.rds")) |>
-  filter(task_code == "sds") |>
-  select(run_id, user_id, dataset, age)
+pilots_data_dir <- here("..", "levante-pilots", "01_fetched_data")
+raw <- read_rds(file.path(pilots_data_dir, "task_data_nested.rds")) |>
+  filter(item_task == "sds") |>
+  unnest(data)
+run_data <- read_rds(file.path(pilots_data_dir, "run_data.rds"))
+runs_sds <- raw |>
+  distinct(run_id, user_id, dataset) |>
+  left_join(run_data |> select(run_id, age), by = "run_id")
 run_meta <- runs_sds |>
   left_join(raw |> group_by(run_id) |> summarise(t_start = min(timestamp)),
             by = "run_id")
@@ -710,10 +714,11 @@ worth remembering if specific card sets ever need DIF screening.
 
 # Cross-stack check
 
-This chapter re-derives, on the unified hackathon dataset, the analysis
-originally developed in `levante-pilots` on the four per-site processed
-datasets (24,799 selections / 811 runs / 168 retest pairs there). Headline
-numbers from that stack, for comparison with the tables above: status items
+This chapter re-derives, on the model calibration dataset
+(`../levante-pilots/01_fetched_data`), the analysis originally developed in
+`levante-pilots` directly on the four per-site processed datasets (24,799
+selections / 811 runs / 168 retest pairs there). Headline numbers from that
+original per-site stack, for comparison with the tables above: status items
 no floors — rxx .845, age r .30, retest .50; with principled floors — retest
 .46; corpus-floors m0 — retest .56; + gate items — rxx .863, age r .35,
 retest .53; tree factors — match retest .36, new retest .51, factor r .24.
